@@ -46,7 +46,7 @@ class RNN(nn.Module):
 
     def forward(self, x, hidden=None):
         if hidden is None:
-            hidden = x.new_zeros(x.shape[0], self.hidden_size)
+            hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
 
         h = self.U(x) + self.V(hidden)
         if self.nonlinearity:

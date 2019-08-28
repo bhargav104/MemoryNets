@@ -110,7 +110,7 @@ class Model(nn.Module):
     def forward(self, x, y):
 
         hidden = None
-        outs = []
+        hiddens = []
         loss = 0
         accuracy = 0
         for i in range(len(x)):
@@ -119,6 +119,8 @@ class Model(nn.Module):
                 hidden = self.rnn.forward(inp, hidden)
             else:
                 hidden = self.rnn.forward(x[i], hidden)
+            hidden.retain_grad()
+            hiddens.append(hidden)
             out = self.lin(hidden)
             loss += self.loss_func(out, y[i].squeeze(1))
 
@@ -131,7 +133,7 @@ class Model(nn.Module):
 
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy
+        return loss, accuracy, hiddens
 
 
 def train_model(net, optimizer, batch_size, T, n_steps):
@@ -153,11 +155,11 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         y = y.transpose(0, 1)
 
         optimizer.zero_grad()
-        loss, accuracy = net.forward(x, y)
+        loss, accuracy, hidden_states = net.forward(x, y)
+
         loss_act = loss
         loss.backward()
-
-        norm = torch.nn.utils.clip_grad_norm_(net.params, 'inf')
+        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
         save_norms.append(norm)
 
         losses.append(loss_act.item())
