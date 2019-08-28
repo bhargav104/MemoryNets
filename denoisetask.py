@@ -14,8 +14,8 @@ import os
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', help='options:  RNN')
-parser.add_argument('--hidden-size', type=int, default=128, help='hidden size of recurrent net')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=200, help='delay between sequence lengths')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
@@ -73,8 +73,6 @@ class Model(nn.Module):
         self.rnn = rec_net
         self.lin = nn.Linear(hidden_size, args.labels + 1)
         self.hidden_size = hidden_size
-        self.params = self.rnn.params + [self.lin.weight, self.lin.bias]
-        self.orthogonal_params = [self.rnn.orthogonal_params]
         self.loss_func = nn.CrossEntropyLoss()
 
         nn.init.xavier_normal_(self.lin.weight)
@@ -138,7 +136,7 @@ def train_model(net, optimizer, batch_size, T):
 
         loss, accuracy = net.forward(x, y)
         loss.backward()
-        norm = torch.nn.utils.clip_grad_norm_(net.params, 'inf')
+        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
         save_norms.append(norm)
         writer.add_scalar('Grad Norms', norm, i)
 
@@ -209,7 +207,7 @@ random_seed = args.random_seed
 NET_TYPE = args.net_type
 CUDA = args.cuda
 decay = args.weight_decay
-udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}'.format(args.hidden_size, nonlin, args.lr, args.batch,
+udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}'.format(args.nhid, nonlin, args.lr, args.batch,
                                                                    args.rinit, args.iinit, decay)
 if args.onehot:
     udir = 'onehot/' + udir
@@ -231,7 +229,7 @@ if args.onehot:
     inp_size = args.labels + 2
 else:
     inp_size = 1
-hid_size = args.hidden_size
+hid_size = args.nhid
 T = args.T
 batch_size = args.batch
 out_size = args.labels + 1
