@@ -16,7 +16,7 @@ from torch.utils.data import Subset
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', help='options: RNN, ORNN, ORNNR, RORNN, ARORNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemNet'], help='options: RNN, MemNet')
 parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -41,22 +41,6 @@ if args.permute:
     order = rng.permutation(784)
 else:
     order = np.arange(784)
-
-if args.rinit == "cayley":
-    rinit = cayley_init
-elif args.rinit == "henaff":
-    rinit = henaff_init
-elif args.rinit == "random":
-    rinit = random_orthogonal_init
-if args.rinit == "xavier":
-    rinit = nn.init.xavier_normal_
-elif args.rinit == 'kaiming':
-    rinit = nn.init.kaiming_normal_
-
-if args.iinit == "xavier":
-    iinit = nn.init.xavier_normal_
-elif args.iinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
 
 trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
@@ -250,7 +234,7 @@ T = 784
 batch_size = args.batch
 out_size = 10
 
-rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, rinit, iinit, CUDA)
+rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA)
 
 net = Model(hid_size, rnn)
 if CUDA:

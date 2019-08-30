@@ -29,22 +29,6 @@ parser.add_argument('--alpha', type=float, default=0.99)
 
 args = parser.parse_args()
 
-if args.rinit == "cayley":
-    rinit = cayley_init
-elif args.rinit == "henaff":
-    rinit = henaff_init
-elif args.rinit == "random":
-    rinit = random_orthogonal_init
-elif args.rinit == 'xavier':
-    rinit = nn.init.xavier_normal_
-elif args.rinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
-if args.iinit == "xavier":
-    iinit = nn.init.xavier_normal_
-elif args.iinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
-
-
 def generate_adding_sequence(T):
     x = []
     sq = np.random.uniform(size=T)
@@ -153,7 +137,7 @@ T = args.T
 out_size = 1
 
 MSE_crit = nn.MSELoss()
-rec_net = select_network(NET_TYPE, inp_size, hid_size, args.nonlin, rinit, iinit, args.cuda)
+rec_net = select_network(NET_TYPE, inp_size, hid_size, args.nonlin, args.rinit, args.iinit, args.cuda)
 
 net = Net(hid_size, out_size, rec_net)
 if CUDA:

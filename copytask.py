@@ -35,22 +35,6 @@ parser.add_argument('--alpha', type=float, default=0.99)
 
 args = parser.parse_args()
 
-if args.rinit == "cayley":
-    rinit = cayley_init
-elif args.rinit == "henaff":
-    rinit = henaff_init
-elif args.rinit == "random":
-    rinit = random_orthogonal_init
-elif args.rinit == 'xavier':
-    rinit = nn.init.xavier_normal_
-elif args.rinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
-if args.iinit == "xavier":
-    iinit = nn.init.xavier_normal_
-elif args.iinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
-
-
 def generate_copying_sequence(T, labels, c_length):
     items = [1, 2, 3, 4, 5, 6, 7, 8, 0, 9]
     x = []
@@ -255,7 +239,7 @@ batch_size = args.batch
 out_size = args.labels + 1
 if args.onehot:
     inp_size = args.labels + 2
-rnn = select_network(NET_TYPE, inp_size, hidden_size, nonlin, rinit, iinit, CUDA)
+rnn = select_network(NET_TYPE, inp_size, hidden_size, nonlin, args.rinit, args.iinit, CUDA)
 net = Model(hidden_size, rnn)
 if CUDA:
     net = net.cuda()

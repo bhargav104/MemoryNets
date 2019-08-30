@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from common import modrelu, henaff_init
+from common import modrelu, henaff_init,cayley_init,random_orthogonal_init
 from exp_numpy import expm
 verbose = False
 
@@ -23,6 +23,9 @@ class RNN(nn.Module):
         else:
             self.nonlinearity = None
 
+        self.r_initializer = r_initializer
+        self.i_initializer = i_initializer
+
         # Create linear layer to act on input X
         self.U = nn.Linear(inp_size, hid_size, bias=bias)
         self.V = nn.Linear(hid_size, hid_size, bias=False)
@@ -32,16 +35,29 @@ class RNN(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.i_initializer(self.U.weight.data)
-        if not isinstance(self.r_initializer,type(torch.nn.init.kaiming_normal_)) and not \
-                isinstance(self.r_initializer,type(torch.nn.init.xavier_normal_)):
-            self.V.weight.data = torch.as_tensor(self.r_initializer(self.hidden_size))
+        if self.r_initializer == "cayley":
+            self.V.weight.data = torch.as_tensor(cayley_init(self.hidden_size))
             A = self.V.weight.data.triu(diagonal=1)
             A = A - A.t()
             self.V.weight.data = expm(A)
-        else:
-
-            self.V.weight.data = torch.as_tensor(self.r_initializer(self.hidden_size))
+        elif self.r_initializer == "henaff":
+            self.V.weight.data = torch.as_tensor(henaff_init(self.hidden_size))
+            A = self.V.weight.data.triu(diagonal=1)
+            A = A - A.t()
+            self.V.weight.data = expm(A)
+        elif self.r_initializer == "random":
+            self.V.weight.data = torch.as_tensor(random_orthogonal_init(self.hidden_size))
+            A = self.V.weight.data.triu(diagonal=1)
+            A = A - A.t()
+            self.V.weight.data = expm(A)
+        elif self.r_initializer == 'xavier':
+            nn.init.xavier_normal_(self.V.weight.data)
+        elif self.r_initializer == 'kaiming':
+            nn.init.kaiming_normal_(self.V.weight.data)
+        if self.i_initializer == "xavier":
+            nn.init.xavier_normal_(self.U.weight.data)
+        elif self.i_initializer == 'kaiming':
+            nn.init.kaiming_normal_(self.U.weight.data)
 
 
     def forward(self, x, hidden=None):
@@ -88,16 +104,29 @@ class MemRNN(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.i_initializer(self.U.weight.data)
-
-        if not isinstance(self.r_initializer, type(torch.nn.init.kaiming_normal_)) and not \
-                isinstance(self.r_initializer, type(torch.nn.init.xavier_normal_)):
-            self.V.weight.data = torch.as_tensor(self.r_initializer(self.hidden_size))
+        if self.r_initializer == "cayley":
+            self.V.weight.data = torch.as_tensor(cayley_init(self.hidden_size))
             A = self.V.weight.data.triu(diagonal=1)
             A = A - A.t()
             self.V.weight.data = expm(A)
-        else:
-            self.r_initializer(self.V.weight.data)
+        elif self.r_initializer == "henaff":
+            self.V.weight.data = torch.as_tensor(henaff_init(self.hidden_size))
+            A = self.V.weight.data.triu(diagonal=1)
+            A = A - A.t()
+            self.V.weight.data = expm(A)
+        elif self.r_initializer == "random":
+            self.V.weight.data = torch.as_tensor(random_orthogonal_init(self.hidden_size))
+            A = self.V.weight.data.triu(diagonal=1)
+            A = A - A.t()
+            self.V.weight.data = expm(A)
+        elif self.r_initializer == 'xavier':
+            nn.init.xavier_normal_(self.V.weight.data)
+        elif self.r_initializer == 'kaiming':
+            nn.init.kaiming_normal_(self.V.weight.data)
+        if self.i_initializer == "xavier":
+            nn.init.xavier_normal_(self.U.weight.data)
+        elif self.i_initializer == 'kaiming':
+            nn.init.kaiming_normal_(self.U.weight.data)
 
     def forward(self, x, hidden=None):
         if hidden is None:

@@ -32,14 +32,6 @@ parser.add_argument('--onehot', type=str2bool, default=False)
 parser.add_argument('--alpha', type=float, default=0.99)
 
 args = parser.parse_args()
-if args.rinit == "cayley":
-    rinit = cayley_init
-elif args.rinit == "henaff":
-    rinit = henaff_init
-if args.iinit == "xavier":
-    iinit = nn.init.xavier_normal_
-elif args.iinit == 'kaiming':
-    iinit = nn.init.kaiming_normal_
 
 
 def onehot(inp):
@@ -234,7 +226,7 @@ T = args.T
 batch_size = args.batch
 out_size = args.labels + 1
 
-rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, rinit, iinit, CUDA)
+rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA)
 
 net = Model(hid_size, rnn)
 if CUDA:
