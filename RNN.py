@@ -33,7 +33,8 @@ class RNN(nn.Module):
 
     def reset_parameters(self):
         self.i_initializer(self.U.weight.data)
-        if not isinstance(type(self.r_initializer),type(torch.nn.init.kaiming_normal_)) and not isinstance(type(self.r_initializer),type(torch.nn.init.xavier_normal_)):
+        if not isinstance(self.r_initializer,type(torch.nn.init.kaiming_normal_)) and not \
+                isinstance(self.r_initializer,type(torch.nn.init.xavier_normal_)):
             self.V.weight.data = torch.as_tensor(self.r_initializer(self.hidden_size))
             A = self.V.weight.data.triu(diagonal=1)
             A = A - A.t()
@@ -88,8 +89,9 @@ class MemRNN(nn.Module):
 
     def reset_parameters(self):
         self.i_initializer(self.U.weight.data)
-        if not isinstance(type(self.r_initializer), type(torch.nn.init.kaiming_normal_)) and not isinstance(
-                type(self.r_initializer), type(torch.nn.init.xavier_normal_)):
+
+        if not isinstance(self.r_initializer, type(torch.nn.init.kaiming_normal_)) and not \
+                isinstance(self.r_initializer, type(torch.nn.init.xavier_normal_)):
             self.V.weight.data = torch.as_tensor(self.r_initializer(self.hidden_size))
             A = self.V.weight.data.triu(diagonal=1)
             A = A - A.t()
@@ -106,8 +108,9 @@ class MemRNN(nn.Module):
             self.st = h
 
         else:
-            all_hs = torch.stack(self.memory).view(-1,self.hidden_size)
-            Uahs = self.Ua(all_hs).view(-1,x.shape[0], self.hidden_size)
+            all_hs = torch.stack(self.memory)
+            Uahs = self.Ua(all_hs)
+
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
             alphas = self.softmax(es)
             all_hs = torch.stack(self.memory,0)
