@@ -23,7 +23,7 @@ parser.add_argument('--lr', type=float, default=5e-4)
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
 parser.add_argument('--iinit', type=str, default="xavier", help='input weight matrix initialization')
 parser.add_argument('--batch', type=int, default=10)
-parser.add_argument('--n-steps', type=int, default=1500)
+parser.add_argument('--n-steps', type=int, default=20000)
 parser.add_argument('--weight_decay', type=float, default=0)
 parser.add_argument('--alpha', type=float, default=0.99)
 
@@ -98,7 +98,7 @@ def train_model(net, optimizer, batch_size, T, num_steps):
         optimizer.step()
 
         print('Train step {}, Loss: {}'.format(i + 1, loss.item()))
-
+    '''
     with open(SAVEDIR + '{}_losses'.format(NET_TYPE), 'wb') as fp:
         pickle.dump(losses, fp)
         with open(SAVEDIR + '{}_norms'.format(NET_TYPE), 'wb') as fp:
@@ -111,6 +111,7 @@ def train_model(net, optimizer, batch_size, T, num_steps):
             False,
             '{}_{}.pth.tar'.format(NET_TYPE,i)
         )
+    '''
 
 def save_checkpoint(state, is_best, fname):
     filename = SAVEDIR + fname

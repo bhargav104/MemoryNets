@@ -16,28 +16,32 @@ from torch.utils.data import Subset
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemNet'], help='options: RNN, MemNet')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
-parser.add_argument('--permute', type=str2bool, default=True, help='permute the order of sMNIST')
+parser.add_argument('--permute', type=str2bool, default=False, help='permute the order of sMNIST')
 parser.add_argument('--nonlin', type=str, default='modrelu', help='non linearity none, relu, tanh, sigmoid')
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
 parser.add_argument('--iinit', type=str, default="kaiming", help='input weight matrix initialization')
 parser.add_argument('--batch', type=int, default=100)
 parser.add_argument('--weight_decay', type=float, default=0)
 parser.add_argument('--alpha', type=float, default=0.99)
+parser.add_argument('--log', action='store_true', default=False, help='Use tensorboardX')
+parser.add_argument('--name', type=str, default='default', help='save name')
+parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
+parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
+parser.add_argument('--k', type=int, default=20, help='Attend ever k timesteps')
 
 args = parser.parse_args()
 
 torch.cuda.manual_seed(args.random_seed)
 torch.manual_seed(args.random_seed)
 np.random.seed(args.random_seed)
-
+rng = np.random.RandomState(1234)
 if args.permute:
-    rng = np.random.RandomState(1234)
     order = rng.permutation(784)
 else:
     order = np.arange(784)
@@ -45,6 +49,7 @@ else:
 trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 offset = 10000
+
 R = rng.permutation(len(trainset))
 lengths = (len(trainset) - offset, offset)
 trainset, valset = [Subset(trainset, R[offset - length:offset]) for offset, length in
@@ -62,15 +67,21 @@ class Model(nn.Module):
         self.hidden_size = hidden_size
         self.lin = nn.Linear(hidden_size, 10)
         self.loss_func = nn.CrossEntropyLoss()
-        self.params = rnn.params + [self.lin.weight, self.lin.bias]
+        #self.params = rnn.params() + [self.lin.weight, self.lin.bias]
 
     def forward(self, inputs, y, order):
         h = None
 
         hiddens = []
         inputs = inputs[:, order]
+        ctr = 0
         for input in torch.unbind(inputs, dim=1):
-            h = self.rnn(input.unsqueeze(1), h)
+            if ctr % args.k == 0:
+                self.rnn.app = 1
+            else:
+                self.rnn.app = 0
+            ctr += 1
+            h, _ = self.rnn(input.unsqueeze(1), h, 1.0)
             h.retain_grad()
             hiddens.append(h)
         out = self.lin(h)
@@ -113,6 +124,7 @@ def train_model(net, optimizer, num_epochs):
     test_accuracies = []
     save_norms = []
     best_test_acc = 0
+    ta = 0
     for epoch in range(0, num_epochs):
         s_t = time.time()
         accs = []
@@ -137,6 +149,7 @@ def train_model(net, optimizer, num_epochs):
             accs.append(correct / float(processed))
 
             loss.backward()
+            #print(i, loss.item())
             losses.append(loss.item())
 
             optimizer.step()
@@ -148,28 +161,22 @@ def train_model(net, optimizer, num_epochs):
         test_accuracies.append(test_acc)
         test_losses.append(test_loss)
         if test_acc > best_test_acc:
-            save_checkpoint({
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch
-            },
-                '{}.pth.tar'.format('best_model')
-            )
+            best_test_acc = test_acc
+            tl, ta = test_model(net, testloader)
+            torch.save(net.state_dict(), './mnistlogs/' + args.name + '.pt')
+
 
         print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Test Loss: {} Test Accuracy {}'.format(
             epoch + 1, time.time() - s_t, np.mean(losses), np.mean(accs), test_loss, test_acc))
         train_losses.append(np.mean(losses))
         train_accuracies.append(np.mean(accs))
         save_norms.append(np.mean(norms))
-
-        # write data to tensorboard
-        writer.add_scalar('Train Loss', train_losses[-1], epoch)
-        writer.add_scalar('Train Accuracy', train_accuracies[-1], epoch)
-        writer.add_scalar('Test Loss', test_losses[-1], epoch)
-        writer.add_scalar('Test Accuracy', test_accuracies[-1], epoch)
-        writer.add_scalar('Gradient Norms', save_norms[-1], epoch)
-
+        if args.log:
+            writer.add_scalar('Train acc', np.mean(accs), epoch)
+            writer.add_scalar('Valid acc', test_acc, epoch)
+            writer.add_scalar('Test acc', ta, epoch)
         # save data
+        '''
         if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:
             with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
                 pickle.dump(train_losses, fp)
@@ -192,13 +199,14 @@ def train_model(net, optimizer, num_epochs):
             },
                 '{}_{}.pth.tar'.format(NET_TYPE, epoch)
             )
-
+        '''
+    '''
     best_state = torch.load(os.path.join(SAVEDIR, 'best_model.pth.tar'))
     net.load_state_dict(best_state['state_dict'])
     test_loss, test_acc = test_model(net, testloader)
     with open(os.path.join(SAVEDIR, 'log_test.txt'), 'w') as fp:
         fp.write('Test loss: {} Test accuracy: {}'.format(test_loss, test_acc))
-
+    '''
     return
 
 
@@ -209,7 +217,6 @@ CUDA = args.cuda
 SAVEFREQ = args.save_freq
 inp_size = 1
 hid_size = args.nhid  # calc_hidden_size(NET_TYPE,165000,1,10)
-alam = args.alam
 nonlins = ['relu', 'tanh', 'sigmoid', 'modrelu']
 nonlin = args.nonlin.lower()
 print(nonlin)
@@ -221,14 +228,16 @@ udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}_alpha_{}'.format(hid_
                                                                             args.rinit, args.iinit, decay, args.alpha)
 LOGDIR = './logs/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 SAVEDIR = './saves/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
+'''
 if not os.path.exists(SAVEDIR):
     os.makedirs(SAVEDIR)
 
 with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
-
-writer = SummaryWriter(LOGDIR)
+'''
+if args.log:
+    writer = SummaryWriter('./mnistlogs/' + args.name + '/')
 
 T = 784
 batch_size = args.batch
@@ -244,9 +253,12 @@ print('sMNIST task')
 print(NET_TYPE)
 print('Cuda: {}'.format(CUDA))
 
-optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
+if args.adam:
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+else:
+    optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
 
 epoch = 0
 
-num_epochs = 70
+num_epochs = 100
 train_model(net, optimizer, num_epochs)

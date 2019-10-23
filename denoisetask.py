@@ -11,6 +11,8 @@ import glob
 from common import henaff_init, cayley_init
 from utils import str2bool, select_network
 import os
+import matplotlib.pyplot as plt
+import sys
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
@@ -23,13 +25,17 @@ parser.add_argument('--labels', type=int, default=9, help='number of labels in t
 parser.add_argument('--c-length', type=int, default=10, help='sequence length')
 parser.add_argument('--nonlin', type=str, default='modrelu', help='non linearity none, relu, tanh, sigmoid')
 parser.add_argument('--vari', type=str2bool, default=False, help='variable length')
-parser.add_argument('--lr', type=float, default=2e-4)
+parser.add_argument('--lr', type=float, default=1e-4) #0.0001
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
 parser.add_argument('--iinit', type=str, default="kaiming", help='input weight matrix initialization')
 parser.add_argument('--batch', type=int, default=10)
 parser.add_argument('--weight_decay', type=float, default=0)
-parser.add_argument('--onehot', type=str2bool, default=False)
+parser.add_argument('--onehot', type=str2bool, default=True)
 parser.add_argument('--alpha', type=float, default=0.99)
+parser.add_argument('--log', action='store_true', default=False, help='Use tensorboardX')
+parser.add_argument('--name', type=str, default='default', help='save name')
+parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
+parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
 
 args = parser.parse_args()
 
@@ -74,16 +80,21 @@ class Model(nn.Module):
         outs = []
         loss = 0
         accuracy = 0
+        va = []
+        attn = 1.0
         for i in range(len(x)):
+            #if i >= 110:
+            #    attn = 0.0
             if args.onehot:
                 inp = onehot(x[i])
             else:
                 inp = x[i]
-            hidden = self.rnn.forward(inp, hidden)
+            hidden, vals = self.rnn.forward(inp, hidden, attn)
+            va.append(vals)
             out = self.lin(hidden)
             loss += self.loss_func(out, y[i].squeeze(1))
 
-            if i > T + args.c_length:
+            if i >= T + args.c_length:
                 preds = torch.argmax(out, dim=1)
                 actual = y[i].squeeze(1)
 
@@ -92,7 +103,7 @@ class Model(nn.Module):
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy
+        return loss, accuracy, va
 
     def loss(self, logits, y):
         print(logits.shape)
@@ -110,6 +121,7 @@ def train_model(net, optimizer, batch_size, T):
     save_norms = []
     accs = []
     losses = []
+    lc = 0
 
     for i in range(200000):
 
@@ -126,11 +138,11 @@ def train_model(net, optimizer, batch_size, T):
         y = y.transpose(0, 1)
         optimizer.zero_grad()
 
-        loss, accuracy = net.forward(x, y)
+        loss, accuracy, _ = net.forward(x, y)
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
         save_norms.append(norm)
-        writer.add_scalar('Grad Norms', norm, i)
+        #writer.add_scalar('Grad Norms', norm, i)
 
         losses.append(loss.item())
         if orthog_optimizer:
@@ -138,12 +150,19 @@ def train_model(net, optimizer, batch_size, T):
 
         optimizer.step()
         accs.append(accuracy)
-        writer.add_scalar('Loss', loss.item(), i)
-        writer.add_scalar('Accuracy', accuracy, i)
+        
+        if args.log and len(accs) == 400:
+            v1 = sum(accs) / len(accs)
+            v2 = sum(losses) / len(losses)
+            writer.add_scalar('Loss', v2, lc)
+            writer.add_scalar('Accuracy', v1, lc)
+            lc += 1
+            accs, losses = [], []
 
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss.item(), accuracy))
 
+    '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
         pickle.dump(losses, fp)
 
@@ -160,7 +179,8 @@ def train_model(net, optimizer, batch_size, T):
     },
         '{}_{}.pth.tar'.format(NET_TYPE, i)
     )
-
+    '''
+    torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
     return
 
 
@@ -179,9 +199,72 @@ def load_model(net, optimizer, fname):
     else:
         check = torch.load(fname)
         net.load_state_dict(check['state_dict'])
+        
         optimizer.load_state_dict(check['optimizer'])
     epoch = check['epoch']
     return net, optimizer, epoch
+
+def load_function():
+    
+    net.load_state_dict(torch.load('denoiselogs/' + args.name + '.pt'))
+    x, y = create_dataset(1, T, args.c_length)
+    #print(x.squeeze(2).squeeze(0))
+    xx = x.squeeze(2).squeeze(0)
+    if CUDA:
+        x = x.cuda()
+        y = y.cuda()
+    x = x.transpose(0, 1)
+    y = y.transpose(0, 1)
+
+    a1 = []
+    for i in range(11):
+        a1.append([])
+    _, acc,  vals = net.forward(x, y)
+    #print(acc)
+    #sys.exit(0)
+    av = [0]
+    for i in range(120):
+        if xx[i].item() != 0 and xx[i].item() != 10:
+            av.append(i)
+    '''
+    deltas = []
+    for i in range(1, 120):
+        diff = net.rnn.memory[i] - net.rnn.memory[i-1]
+        val = torch.sum(diff ** 2).item()
+        deltas.append(val)
+    plt.plot(range(1, 120), deltas)
+    plt.scatter(np.array(av)[1:], np.zeros(10), c='orange')
+    plt.title('Change in hidden state Denoise task')
+    plt.xlabel('t')
+    plt.ylabel('delta h')
+    plt.savefig('denoiselogs/delta.png')
+    sys.exit(0)
+    '''
+    ctr = 1
+
+    for (a, b) in vals:
+        if a is None:
+            continue
+        
+        mv = torch.argmax(a.squeeze(1)).item()
+        #print(ctr, mv, xx[mv].item())
+        ctr += 1
+        for i in range(11):
+            if a.size(0) > av[i]:
+                a1[i].append(b[av[i]][0].item())
+        #a2.append(b[9][0].item())
+
+    clrs = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'brown', 'pink', 'orange', 'purple']
+    #legs = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    legs = []
+    for i in range(11):
+        legs.append(str(av[i]))
+    for i in range(11):
+        plt.plot(range(av[i]+1, 120), a1[i], clrs[i], label=legs[i])
+    plt.legend()
+    #plt.plot(a1)
+    #plt.plot(a2)
+    plt.savefig('fig.png')
 
 
 def save_checkpoint(state, fname):
@@ -205,13 +288,15 @@ if args.onehot:
     udir = 'onehot/' + udir
 LOGDIR = './logs/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 SAVEDIR = './saves/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
+'''
 if not os.path.exists(SAVEDIR):
     os.makedirs(SAVEDIR)
 with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
-
-writer = SummaryWriter(LOGDIR)
+'''
+if args.log:
+    writer = SummaryWriter('./denoiselogs/' + args.name + '/')
 
 torch.cuda.manual_seed(random_seed)
 torch.manual_seed(random_seed)
@@ -242,6 +327,13 @@ l2_norm_crit = nn.MSELoss()
 
 orthog_optimizer = None
 
+if args.adam:
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+else:
+    optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
 
-optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
+if args.load:
+    load_function()
+    sys.exit(0)
+
 train_model(net, optimizer, batch_size, T)

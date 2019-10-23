@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from common import modrelu, henaff_init,cayley_init,random_orthogonal_init
 from exp_numpy import expm
+import sys
 verbose = False
 
 class RNN(nn.Module):
@@ -31,6 +32,8 @@ class RNN(nn.Module):
         self.V = nn.Linear(hid_size, hid_size, bias=False)
         self.i_initializer = i_initializer
         self.r_initializer = r_initializer
+        self.memory = []
+        self.app = 1
 
         self.reset_parameters()
 
@@ -60,14 +63,16 @@ class RNN(nn.Module):
             nn.init.kaiming_normal_(self.U.weight.data)
 
 
-    def forward(self, x, hidden=None):
+    def forward(self, x, hidden, attn):
         if hidden is None:
             hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
+            self.memory = []
 
         h = self.U(x) + self.V(hidden)
         if self.nonlinearity:
             h = self.nonlinearity(h)
-        return h
+        self.memory.append(h)
+        return h, (None, None)
 
 class MemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -100,6 +105,8 @@ class MemRNN(nn.Module):
 
         self.i_initializer = i_initializer
         self.r_initializer = r_initializer
+        self.ctr = 0
+        self.app = 1
 
         self.reset_parameters()
 
@@ -128,10 +135,11 @@ class MemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden=None):
+    def forward(self, x, hidden, attn):
         if hidden is None:
             self.count = 0
-            hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
+            #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
+            hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
@@ -139,16 +147,24 @@ class MemRNN(nn.Module):
         else:
             all_hs = torch.stack(self.memory)
             Uahs = self.Ua(all_hs)
+            #print(Uahs.size())
 
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
             alphas = self.softmax(es)
             all_hs = torch.stack(self.memory,0)
-            ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs),all_hs),dim=0)
-            self.st = all_hs[-1] + ct
+            ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs), all_hs), dim=0)
+            #ct = torch.sum(alphas.unsqueeze(2) * all_hs, dim=0)
+            self.st = 0.5 * (all_hs[-1] + ct * attn)
             h = self.U(x) + self.V(self.st)
 
         if self.nonlinearity:
             h = self.nonlinearity(h)
         h.retain_grad()
-        self.memory.append(h)
-        return h
+        if self.app == 1:
+            self.memory.append(h)
+        #print(h)
+        if self.count == 0:
+            self.count = 1
+            return h, (None, None)
+        else:
+            return h, (es, alphas)

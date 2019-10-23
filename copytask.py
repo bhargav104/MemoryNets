@@ -8,6 +8,8 @@ from tensorboardX import SummaryWriter
 import time
 import glob
 import os
+import matplotlib.pyplot as plt
+import sys
 
 from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
@@ -21,7 +23,7 @@ parser.add_argument('--T', type=int, default=300, help='delay between sequence l
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
 parser.add_argument('--labels', type=int, default=8, help='number of labels in the output and input')
 parser.add_argument('--c-length', type=int, default=10, help='sequence length')
-parser.add_argument('--nonlin', type=str, default='modrelu',
+parser.add_argument('--nonlin', type=str, default='tanh',
                     choices=['none', 'relu', 'tanh', 'modrelu', 'sigmoid'],
                     help='non linearity none, relu, tanh, sigmoid')
 parser.add_argument('--vari', type=str2bool, default=False, help='variable length')
@@ -32,6 +34,10 @@ parser.add_argument('--batch', type=int, default=10)
 parser.add_argument('--weight_decay', type=float, default=0)
 parser.add_argument('--onehot', type=str2bool, default=False)
 parser.add_argument('--alpha', type=float, default=0.99)
+parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
+parser.add_argument('--name', type=str, default='default', help='save name')
+parser.add_argument('--log', action='store_true', default=False, help='Use tensorboardX')
+parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
 
 args = parser.parse_args()
 
@@ -93,16 +99,21 @@ class Model(nn.Module):
 
     def forward(self, x, y):
 
+        va = []
         hidden = None
         hiddens = []
         loss = 0
         accuracy = 0
+        attn = 1.0
         for i in range(len(x)):
+            #if i >= 110:
+            #    attn = 0.0
             if args.onehot:
                 inp = onehot(x[i])
-                hidden = self.rnn.forward(inp, hidden)
+                hidden, vals = self.rnn.forward(inp, hidden, attn)
             else:
-                hidden = self.rnn.forward(x[i], hidden)
+                hidden, vals = self.rnn.forward(x[i], hidden, attn)
+            va.append(vals)
             hidden.retain_grad()
             hiddens.append(hidden)
             out = self.lin(hidden)
@@ -117,13 +128,14 @@ class Model(nn.Module):
 
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, hiddens
+        return loss, accuracy, hiddens, va
 
 
 def train_model(net, optimizer, batch_size, T, n_steps):
     save_norms = []
     accs = []
     losses = []
+    lc = 0
 
     for i in range(n_steps):
 
@@ -139,7 +151,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         y = y.transpose(0, 1)
 
         optimizer.zero_grad()
-        loss, accuracy, hidden_states = net.forward(x, y)
+        loss, accuracy, hidden_states, _ = net.forward(x, y)
 
         loss_act = loss
         loss.backward()
@@ -150,14 +162,19 @@ def train_model(net, optimizer, batch_size, T, n_steps):
 
         optimizer.step()
         accs.append(accuracy)
-        if writer:
-            writer.add_scalar('Loss', loss.item(), i)
-            writer.add_scalar('Accuracy', accuracy, i)
-            writer.add_scalar('Grad Norms', norm, i)
+        
+        if args.log and len(accs) == 40:
+            v1 = sum(accs) / len(accs)
+            v2 = sum(losses) / len(losses)
+            writer.add_scalar('Loss', v2, lc)
+            writer.add_scalar('Accuracy', v1, lc)
+            lc += 1
+            accs, losses = [], []
+            #writer.add_scalar('Grad Norms', norm, i)
 
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss_act.item(), accuracy))
-
+    '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
         pickle.dump(losses, fp)
 
@@ -174,7 +191,8 @@ def train_model(net, optimizer, batch_size, T, n_steps):
     },
         '{}_{}.pth.tar'.format(NET_TYPE, i)
     )
-
+    '''
+    torch.save(net.state_dict(), './copylogs/' + args.name + '.pt')
     return
 
 
@@ -197,6 +215,53 @@ def load_model(net, optimizer, fname):
     epoch = check['epoch']
     return net, optimizer, epoch
 
+def load_function():
+    
+    net.load_state_dict(torch.load('copylogs/' + args.name + '.pt'))
+    x, y = create_dataset(1, T, args.c_length)
+    if CUDA:
+        x = x.cuda()
+        y = y.cuda()
+    x = x.transpose(0, 1)
+    y = y.transpose(0, 1)
+
+    a1 = []
+    for i in range(11):
+        a1.append([])
+    _, acc, _, vals = net.forward(x, y)
+    '''
+    deltas = []
+    for i in range(1, 120):
+        diff = net.rnn.memory[i] - net.rnn.memory[i-1]
+        val = torch.sum(diff ** 2).item()
+        deltas.append(val)
+    plt.plot(range(1, 120), deltas)
+    #plt.scatter(np.array(av)[1:], np.zeros(10), c='orange')
+    plt.title('Change in hidden state Copy task')
+    plt.xlabel('t')
+    plt.ylabel('delta h')
+    plt.savefig('copylogs/delta_h.png')
+    sys.exit(0)
+    '''
+    ctr = 1
+    for (a, b) in vals:
+        if a is None:
+            continue
+        print(ctr, torch.argmax(a.squeeze(1)).item())
+        ctr += 1
+        for i in range(min(a.size(0), 11)):
+            a1[i].append(b[i][0].item())
+        #a2.append(b[9][0].item())
+
+    clrs = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'brown', 'pink', 'orange', 'grey']
+    legs = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+    for i in range(11):
+        plt.plot(range(i+1, 120), a1[i], clrs[i], label=legs[i])
+    plt.legend()
+    #plt.plot(a1)
+    #plt.plot(a2)
+    plt.savefig('fig.png')
+
 
 def save_checkpoint(state, fname):
     filename = SAVEDIR + fname
@@ -218,7 +283,7 @@ if args.onehot:
     udir = 'onehot/' + udir
 
 if not args.vari:
-    n_steps = 1500
+    n_steps = 200000 #100000
     LOGDIR = './logs/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     SAVEDIR = './saves/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     print(SAVEDIR)
@@ -226,8 +291,9 @@ else:
     n_steps = 200000
     LOGDIR = './logs/varicopytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     SAVEDIR = './saves/varicopytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-writer = None
-# writer = SummaryWriter(LOGDIR)
+
+if args.log:
+    writer = SummaryWriter('./copylogs/' + args.name + '/')
 
 torch.cuda.manual_seed(random_seed)
 torch.manual_seed(random_seed)
@@ -251,12 +317,18 @@ print('Cuda: {}'.format(CUDA))
 print(nonlin)
 print(hidden_size)
 
-if not os.path.exists(SAVEDIR):
-    os.makedirs(SAVEDIR)
+#if not os.path.exists(SAVEDIR):
+#    os.makedirs(SAVEDIR)
+if not args.adam:
+    optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
+else:
+    optimizer = optim.Adam(net.parameters(), lr=args.lr)
+#with open(SAVEDIR + 'hparams.txt', 'w') as fp:
+#    for key, val in args.__dict__.items():
+#        fp.write(('{}: {}'.format(key, val)))
 
-optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
+if args.load:
+    load_function()
+    sys.exit(0)
 
-with open(SAVEDIR + 'hparams.txt', 'w') as fp:
-    for key, val in args.__dict__.items():
-        fp.write(('{}: {}'.format(key, val)))
 train_model(net, optimizer, batch_size, T, n_steps)
