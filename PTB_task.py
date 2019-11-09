@@ -10,7 +10,7 @@ import numpy as np
 import os
 import pickle
 from tensorboardX import SummaryWriter
-
+import matplotlib.pyplot as plt
 
 class Dictionary(object):
     def __init__(self):
@@ -66,7 +66,7 @@ class RNNModel(nn.Module):
         self.encoder = nn.Embedding(ntoken, ninp)
         self.rnn = rnn
         self.decoder = nn.Linear(nhid, ntoken)
-        self.params = rnn.params + [self.encoder.weight, self.decoder.weight, self.decoder.bias]
+        #self.params = rnn.params + [self.encoder.weight, self.decoder.weight, self.decoder.bias]
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
         # https://arxiv.org/abs/1608.05859
@@ -92,13 +92,17 @@ class RNNModel(nn.Module):
 
         emb = self.encoder(input)
         hs = []
+        e_s = []
+        alpha_s = []
         for i in range(emb.shape[0]):
-            hidden = self.rnn(emb[i], hidden)
+            hidden, (es,alphas) = self.rnn(emb[i], hidden, 1.0, i==0)
+            e_s.append(es)
+            alpha_s.append(alphas)
             hs.append(hidden)
         output = torch.stack(hs)
 
         decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
-        return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden
+        return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, (e_s, alpha_s)
 
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
@@ -186,11 +190,12 @@ alam = args.alam
 CUDA = args.cuda
 nonlin = args.nonlin
 
-rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.ostep_method)
+#rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA)
 
-model = RNNModel(rnn, ntokens, inp_size, hid_size, args.tied)
-if args.cuda:
-    model.cuda()
+#model = RNNModel(rnn, ntokens, inp_size, hid_size, args.tied)
+model = torch.load('./PTBNet/model.pt', map_location=torch.device("cpu"))
+#if args.cuda:
+#    model.cuda()
 print('Language Task')
 print(NET_TYPE)
 print(args)
@@ -222,7 +227,7 @@ def evaluate(data_source):
         data, targets = get_batch(data_source, i, evaluation=True)
         if i == 0 and NET_TYPE == 'LSTM':
             model.rnn.init_states(data.shape[1])
-        output, hidden = model(data, hidden)
+        output, hidden, (es,alphas) = model(data, hidden)
         output_flat = output.view(-1, ntokens)
         total_loss += len(data) * criterion(output_flat, targets).item()
         correct += torch.eq(torch.argmax(output_flat, dim=1), targets).sum().item()
@@ -251,11 +256,11 @@ def train(optimizer):
             hidden = hidden.detach()
         model.zero_grad()
         output, hidden = model(data, hidden)
-        loss_act = criterion(output.view(-1, ntokens), targets)
+        loss = criterion(output.view(-1, ntokens), targets)
         loss.backward()
 
         optimizer.step()
-        total_loss += loss_act.item()
+        total_loss += loss.item()
 
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
@@ -281,7 +286,7 @@ best_val_loss = None
 if not args.adam:
     optimizer = optim.RMSprop(model.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
 else:
-    optimizer = optim.RMSprop(model.parameters(), lr=args.lr, alpha=args.alpha)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
 scheduler = optim.lr_scheduler.StepLR(optimizer,1,gamma=0.5)
 
@@ -302,13 +307,13 @@ try:
     v_accs = []
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
-        loss = train(optimizer)
-        tr_losses.append(loss)
+        #loss = train(optimizer)
+        #tr_losses.append(loss)
 
         val_loss, val_acc = evaluate(val_data)
         v_losses.append(val_loss)
         v_accs.append(val_acc)
-        writer.add_scalar('train_loss', loss)
+        #writer.add_scalar('train_loss', loss)
         writer.add_scalar('valid_accuracy', val_acc)
         writer.add_scalar('valid_bpc', val_loss / math.log(2))
         writer.add_scalar('valid_bpc', val_loss)

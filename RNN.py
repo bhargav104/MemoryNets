@@ -63,9 +63,12 @@ class RNN(nn.Module):
             nn.init.kaiming_normal_(self.U.weight.data)
 
 
-    def forward(self, x, hidden, attn):
+    def forward(self, x, hidden, attn, cont=False):
         if hidden is None:
             hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
+            self.memory = []
+        elif cont:
+            hidden = hidden.detach()
             self.memory = []
 
         h = self.U(x) + self.V(hidden)
@@ -135,11 +138,17 @@ class MemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn):
+    def forward(self, x, hidden, attn, cont=False):
         if hidden is None:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
             hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
+            self.memory = []
+            h = self.U(x) + self.V(hidden)
+            self.st = h
+        elif cont:
+            self.count = 0
+            hidden = hidden.detach()
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
@@ -150,6 +159,7 @@ class MemRNN(nn.Module):
             #print(Uahs.size())
 
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
+            #print(es.shape)
             alphas = self.softmax(es)
             all_hs = torch.stack(self.memory,0)
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs), all_hs), dim=0)
