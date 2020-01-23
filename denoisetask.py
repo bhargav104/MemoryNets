@@ -11,12 +11,13 @@ import glob
 from common import henaff_init, cayley_init
 from utils import str2bool, select_network
 import os
+import seaborn as sns
 import matplotlib.pyplot as plt
 import sys
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=200, help='delay between sequence lengths')
@@ -36,6 +37,9 @@ parser.add_argument('--log', action='store_true', default=False, help='Use tenso
 parser.add_argument('--name', type=str, default='default', help='save name')
 parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
 parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
+parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
+parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
+parser.add_argument('--cutoff', type=float, default=0.0, help='Cutoff for long term bucket')
 
 args = parser.parse_args()
 
@@ -122,6 +126,13 @@ def train_model(net, optimizer, batch_size, T):
     accs = []
     losses = []
     lc = 0
+    tx, ty = create_dataset(1, T, args.c_length)
+    xx = tx[0].squeeze(1)
+    if CUDA:
+        tx = tx.cuda()
+        ty = ty.cuda()
+    tx = tx.transpose(0, 1)
+    ty = ty.transpose(0, 1)
 
     for i in range(200000):
 
@@ -138,7 +149,7 @@ def train_model(net, optimizer, batch_size, T):
         y = y.transpose(0, 1)
         optimizer.zero_grad()
 
-        loss, accuracy, _ = net.forward(x, y)
+        loss, accuracy, vals = net.forward(x, y)
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
         save_norms.append(norm)
@@ -150,7 +161,37 @@ def train_model(net, optimizer, batch_size, T):
 
         optimizer.step()
         accs.append(accuracy)
-        
+        '''
+        if i % 1000 == 0:
+            tl, ta, vals = net.forward(tx, ty)
+            hist = net.rnn.long_scores.squeeze(1).detach().cpu().numpy()
+            fig, ax = plt.subplots()
+            plt.bar(np.arange(120), hist)
+            av = []
+            title = ''
+            for j in range(120):
+                if xx[j].item() != 0 and xx[j].item() != 10:
+                    av.append(j)
+                    title = title + str(j) + ' '
+            mat = np.zeros((120, 120))
+            for j in range(120):
+                if vals[j][0] is None:
+                    continue
+                #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
+                for k in range(vals[j][1].size(0)):
+                    #mat[j][k] = vals[j][1][k][0]
+                    adv = 0
+                    if j > 10:
+                        adv = j - 10
+                    mat[j][k+adv] = vals[j][1][k][0]
+            fig, ax = plt.subplots(figsize=(15,10))
+            ax = sns.heatmap(mat, cmap='Greys')
+            ax.set_title(title)
+            name = 'step_' + str(i)  + '_acc_' + str(ta) +'_norm_' + str(norm)  
+            plt.savefig('heatmaps_denoise/' + name + '.png')
+            plt.close(fig)
+        '''
+
         if args.log and len(accs) == 400:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
@@ -311,9 +352,10 @@ T = args.T
 batch_size = args.batch
 out_size = args.labels + 1
 
-rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA)
-
+rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
 net = Model(hid_size, rnn)
+net.rnn.T = args.T + 20
+net.rnn.cutoff = args.cutoff
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()

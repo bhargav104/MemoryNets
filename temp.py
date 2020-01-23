@@ -1,6 +1,11 @@
-import numpy as np
 import torch
+import sys
 
-a = torch.tensor([[1, 2], [3, 4], [5, 6]])
-b = torch.tensor([[[1,1], [1,1]], [[1,1], [1,1]], [[1,1], [1,1]]])
-print(torch.mul(a.unsqueeze(2).expand_as(b), b))
+
+x = torch.zeros(4, 4)
+x[0] = 1.0
+
+y = sys.float_info.max
+
+x[x == 0.0] = float('-inf')
+print(x)

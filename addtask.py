@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser(description='add task parameters')
 parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
-parser.add_argument('--T', type=int, default=300, help='delay between sequence lengths')
+parser.add_argument('--T', type=int, default=100, help='delay between sequence lengths')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
 parser.add_argument('--nonlin', type=str, default='modrelu',
                     choices=['none', 'relu', 'tanh', 'modrelu', 'sigmoid'],
@@ -72,7 +72,7 @@ class Net(nn.Module):
         hidden = None
         hiddens = []
         for i in range(len(x)):
-            hidden = self.rec_net.forward(x[i], hidden)
+            hidden, _ = self.rec_net.forward(x[i], hidden, 1.0)
             hidden.retain_grad()
             hiddens.append(hidden)
         out = self.ol(hidden)
@@ -92,7 +92,7 @@ def train_model(net, optimizer, batch_size, T, num_steps):
         net.zero_grad()
         loss, hidden_states = net.forward(x, y)
         loss.backward()
-        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
+        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
         save_norms.append(norm)
         losses.append(loss.item())
         optimizer.step()

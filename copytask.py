@@ -8,6 +8,7 @@ from tensorboardX import SummaryWriter
 import time
 import glob
 import os
+import seaborn as sns
 import matplotlib.pyplot as plt
 import sys
 
@@ -16,7 +17,7 @@ from utils import str2bool, select_network
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=300, help='delay between sequence lengths')
@@ -38,6 +39,9 @@ parser.add_argument('--adam', action='store_true', default=False, help='Use adam
 parser.add_argument('--name', type=str, default='default', help='save name')
 parser.add_argument('--log', action='store_true', default=False, help='Use tensorboardX')
 parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
+parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
+parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
+parser.add_argument('--cutoff', type=float, default=0.0, help='Cutoff for long term bucket')
 
 args = parser.parse_args()
 
@@ -105,9 +109,10 @@ class Model(nn.Module):
         loss = 0
         accuracy = 0
         attn = 1.0
+        self.rnn.app = 1
         for i in range(len(x)):
-            #if i >= 110:
-            #    attn = 0.0
+            #if i >= 11:
+            #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
                 hidden, vals = self.rnn.forward(inp, hidden, attn)
@@ -136,6 +141,12 @@ def train_model(net, optimizer, batch_size, T, n_steps):
     accs = []
     losses = []
     lc = 0
+    tx, ty = create_dataset(1, T, args.c_length)
+    if CUDA:
+        tx = tx.cuda()
+        ty = ty.cuda()
+    tx = tx.transpose(0, 1)
+    ty = ty.transpose(0, 1)
 
     for i in range(n_steps):
 
@@ -151,18 +162,46 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         y = y.transpose(0, 1)
 
         optimizer.zero_grad()
-        loss, accuracy, hidden_states, _ = net.forward(x, y)
-
+        loss, accuracy, hidden_states, vals = net.forward(x, y)
         loss_act = loss
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
+        #print(norm)
         save_norms.append(norm)
 
         losses.append(loss_act.item())
 
         optimizer.step()
         accs.append(accuracy)
-        
+        '''
+        if i % 1000 == 0:
+            tl, ta, th, vals = net.forward(tx, ty)
+            hist = net.rnn.long_scores.squeeze(1).detach().cpu().numpy()
+            fig, ax = plt.subplots()
+            plt.bar(np.arange(120), hist)
+            mat = np.zeros((120, 120))
+            for j in range(120):
+                if vals[j][0] is None:
+                    continue
+                #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
+                for k in range(vals[j][1].size(0)):
+                    #mat[j][k] = vals[j][1][k][0]
+                    adv = 0
+                    if vals[j][1][k][0] == 0.0:
+                        continue
+                    if j > 10:
+                        adv = j - 10
+                    if k < 10:
+                        mat[j][k+adv] = vals[j][1][k][0]
+                    elif j > 10:
+                        mat[j][k-10] = vals[j][1][k][0]
+
+            fig, ax = plt.subplots(figsize=(15,10))
+            ax = sns.heatmap(mat, cmap='Greys')
+            name = 'step_' + str(i)  + '_acc_' + str(ta) +'_norm_' + str(norm)  
+            plt.savefig('heatmaps_copy/' + name + '.png')
+            plt.close(fig)
+        '''
         if args.log and len(accs) == 40:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
@@ -229,6 +268,9 @@ def load_function():
     for i in range(11):
         a1.append([])
     _, acc, _, vals = net.forward(x, y)
+    print(acc)
+    #sys.exit(0)
+
     '''
     deltas = []
     for i in range(1, 120):
@@ -305,8 +347,10 @@ batch_size = args.batch
 out_size = args.labels + 1
 if args.onehot:
     inp_size = args.labels + 2
-rnn = select_network(NET_TYPE, inp_size, hidden_size, nonlin, args.rinit, args.iinit, CUDA)
+rnn = select_network(NET_TYPE, inp_size, hidden_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
 net = Model(hidden_size, rnn)
+net.rnn.T = args.T + 20
+net.rnn.cutoff = args.cutoff
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()

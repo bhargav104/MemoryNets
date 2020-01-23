@@ -8,11 +8,13 @@ import pickle
 import argparse
 import time
 import os
-
+import sys
 from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
 from torch._utils import _accumulate
 from torch.utils.data import Subset
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
@@ -33,7 +35,9 @@ parser.add_argument('--log', action='store_true', default=False, help='Use tenso
 parser.add_argument('--name', type=str, default='default', help='save name')
 parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
 parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
-parser.add_argument('--k', type=int, default=20, help='Attend ever k timesteps')
+parser.add_argument('--k', type=int, default=1, help='Attend ever k timesteps')
+parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
+parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
 
 args = parser.parse_args()
 
@@ -46,11 +50,20 @@ if args.permute:
 else:
     order = np.arange(784)
 
+#trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
+#valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
+#offset = 10000
 trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-offset = 10000
+testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
 
 R = rng.permutation(len(trainset))
+train_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000))
+valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000, 60000))
+
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=train_sampler, num_workers=2)
+valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler, num_workers=2)
+testloader = torch.utils.data.DataLoader(testset, batch_size=100, num_workers=2)
+'''
 lengths = (len(trainset) - offset, offset)
 trainset, valset = [Subset(trainset, R[offset - length:offset]) for offset, length in
                     zip(_accumulate(lengths), lengths)]
@@ -58,7 +71,7 @@ testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch, shuffle=False, num_workers=2)
 valloader = torch.utils.data.DataLoader(valset, batch_size=args.batch, shuffle=False, num_workers=2)
 testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch, num_workers=2)
-
+'''
 
 class Model(nn.Module):
     def __init__(self, hidden_size, rnn):
@@ -75,13 +88,18 @@ class Model(nn.Module):
         hiddens = []
         inputs = inputs[:, order]
         ctr = 0
-        for input in torch.unbind(inputs, dim=1):
+        va = []
+        #for input in torch.unbind(inputs, dim=1):
+        for i in range(784):
+            inp = inputs[:, i].unsqueeze(1)
+            #inp = inputs[:,7*i:7*(i+1)]
             if ctr % args.k == 0:
                 self.rnn.app = 1
             else:
                 self.rnn.app = 0
             ctr += 1
-            h, _ = self.rnn(input.unsqueeze(1), h, 1.0)
+            h, vals = self.rnn(inp, h, 1.0)
+            va.append(vals)
             h.retain_grad()
             hiddens.append(h)
         out = self.lin(h)
@@ -89,7 +107,7 @@ class Model(nn.Module):
         loss = self.loss_func(out, y)
         preds = torch.argmax(out, dim=1)
         correct = torch.eq(preds, y).sum().item()
-        return loss, correct
+        return loss, correct, va
 
 
 def test_model(net, dataloader):
@@ -104,7 +122,7 @@ def test_model(net, dataloader):
             if CUDA:
                 x = x.cuda()
                 y = y.cuda()
-            loss, c = net.forward(x, y, order)
+            loss, c, _ = net.forward(x, y, order)
 
             accuracy += c
 
@@ -125,6 +143,7 @@ def train_model(net, optimizer, num_epochs):
     save_norms = []
     best_test_acc = 0
     ta = 0
+    chk = 1
     for epoch in range(0, num_epochs):
         s_t = time.time()
         accs = []
@@ -133,16 +152,24 @@ def train_model(net, optimizer, num_epochs):
         processed = 0
         net.train()
         correct = 0
+
         for i, data in enumerate(trainloader, 0):
             inp_x, inp_y = data
             inp_x = inp_x.view(-1, 784)
+            if chk == 1:
+                tx = inp_x[0].unsqueeze(0)
+                ty = inp_y[0].unsqueeze(0)
+                if CUDA:
+                    tx = tx.cuda()
+                    ty = ty.cuda()
+                chk = 0
 
             if CUDA:
                 inp_x = inp_x.cuda()
                 inp_y = inp_y.cuda()
             optimizer.zero_grad()
 
-            loss, c = net.forward(inp_x, inp_y, order)
+            loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
 
@@ -175,6 +202,22 @@ def train_model(net, optimizer, num_epochs):
             writer.add_scalar('Train acc', np.mean(accs), epoch)
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
+
+        tl, ta, vals = net.forward(tx, ty, order)
+        title = str(ty[0].item())
+        mat = np.zeros((112, 112))
+        for j in range(112):
+            if vals[j][0] is None:
+                continue
+            #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
+            for k in range(vals[j][1].size(0)):
+                mat[j][k] = vals[j][0][k][0]
+        fig, ax = plt.subplots(figsize=(15,10))
+        ax = sns.heatmap(mat, cmap='Greys')
+        ax.set_title(title)
+        name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
+        plt.savefig('heatmaps_mnist/' + name + '.png')
+        plt.close(fig)
         # save data
         '''
         if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:
@@ -243,7 +286,7 @@ T = 784
 batch_size = args.batch
 out_size = 10
 
-rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA)
+rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
 
 net = Model(hid_size, rnn)
 if CUDA:
@@ -260,5 +303,5 @@ else:
 
 epoch = 0
 
-num_epochs = 100
+num_epochs = 200
 train_model(net, optimizer, num_epochs)
