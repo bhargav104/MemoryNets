@@ -4,6 +4,7 @@ from common import modrelu, henaff_init,cayley_init,random_orthogonal_init
 from exp_numpy import expm
 import sys
 import time
+import numpy as np
 verbose = False
 
 class RNN(nn.Module):
@@ -58,6 +59,8 @@ class RNN(nn.Module):
             nn.init.xavier_normal_(self.V.weight.data)
         elif self.r_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.V.weight.data)
+        elif self.r_initializer == 'identity':
+            self.V.weight.data = torch.tensor(np.identity(self.hidden_size), dtype=torch.float)
         if self.i_initializer == "xavier":
             nn.init.xavier_normal_(self.U.weight.data)
         elif self.i_initializer == 'kaiming':
@@ -73,7 +76,7 @@ class RNN(nn.Module):
         if self.nonlinearity:
             h = self.nonlinearity(h)
         self.memory.append(h)
-        return h, (None, None)
+        return h, (None, None), None
 
 class MemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -169,9 +172,9 @@ class MemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None)
+            return h, (None, None), None
         else:
-            return h, (es, alphas)
+            return h, (es, alphas), None
 
 class RelMemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, last_k, rsize, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -247,6 +250,7 @@ class RelMemRNN(nn.Module):
             self.long_mask = float('-inf') * torch.ones(self.rsize, x.shape[0], requires_grad=False).cuda()
             #self.long_mem = torch.zeros(self.rsize, x.shape[0], self.hidden_size, requires_grad=False).cuda()
             self.long_mem = [[] for i in range(x.shape[0])]
+            self.long_ids = torch.ones(x.shape[0], self.rsize) * -1.0
             self.buck_scores = torch.zeros(x.shape[0], self.rsize)
             self.memory = []
             h = self.U(x) + self.V(hidden)
@@ -274,7 +278,8 @@ class RelMemRNN(nn.Module):
             es_long = es_long + self.long_mask
             es_comb = torch.cat((es, es_long), dim=0)
             alphas = self.softmax(es_comb)
-
+            #print(alphas)
+            #time.sleep(0.5  )
             det_a = alphas.detach()
             lv = max(0, self.tcnt - self.last_k + 1)
             self.long_scores[lv:(self.tcnt+1), :] += det_a[:-self.rsize, :]
@@ -293,6 +298,9 @@ class RelMemRNN(nn.Module):
             h = self.nonlinearity(h)
         h.retain_grad()
         self.tcnt += 1
+        ret_pos = torch.zeros(x.shape[0], self.rsize)
+        ret_pos.copy_(self.long_ids)
+        #print(self.long_ids)
         if self.tcnt >= self.last_k:
             '''
             new_mask = torch.zeros(self.rsize, x.shape[0], requires_grad=False).cuda()
@@ -314,12 +322,15 @@ class RelMemRNN(nn.Module):
                     self.long_mem[i].append(self.memory[0][i])
                     new_mask[addpos][i] = 0.0
                     self.buck_scores[i][addpos] = self.long_scores[self.tcnt-self.last_k][i]
+                    self.long_ids[i][addpos] = self.tcnt - self.last_k
                 
                 elif self.long_scores[self.tcnt-self.last_k][i].item() > self.buck_scores[i][minp[i].item()].item():
                     addpos = minp[i].item()
                     self.long_mem[i][addpos] = self.memory[0][i]
                     new_mask[addpos][i] = 0.0
                     self.buck_scores[i][addpos] = self.long_scores[self.tcnt-self.last_k][i]
+                    self.long_ids[i][addpos] = 1.0
+                    self.long_ids[i][addpos] = self.tcnt - self.last_k
             
             self.long_mask = new_mask
             #print(self.long_ctrs)
@@ -331,6 +342,6 @@ class RelMemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None)
+            return h, (None, None), ret_pos
         else:
-            return h, (es_comb, alphas)
+            return h, (es_comb, alphas), ret_pos

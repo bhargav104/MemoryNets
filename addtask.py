@@ -19,11 +19,11 @@ parser.add_argument('--random-seed', type=int, default=400, help='random seed')
 parser.add_argument('--nonlin', type=str, default='modrelu',
                     choices=['none', 'relu', 'tanh', 'modrelu', 'sigmoid'],
                     help='non linearity none, relu, tanh, sigmoid')
-parser.add_argument('--lr', type=float, default=5e-4)
+parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
 parser.add_argument('--iinit', type=str, default="xavier", help='input weight matrix initialization')
 parser.add_argument('--batch', type=int, default=10)
-parser.add_argument('--n-steps', type=int, default=20000)
+parser.add_argument('--n-steps', type=int, default=100000)
 parser.add_argument('--weight_decay', type=float, default=0)
 parser.add_argument('--alpha', type=float, default=0.99)
 
@@ -72,7 +72,7 @@ class Net(nn.Module):
         hidden = None
         hiddens = []
         for i in range(len(x)):
-            hidden, _ = self.rec_net.forward(x[i], hidden, 1.0)
+            hidden, _, _ = self.rec_net.forward(x[i], hidden, 1.0)
             hidden.retain_grad()
             hiddens.append(hidden)
         out = self.ol(hidden)
@@ -138,7 +138,7 @@ T = args.T
 out_size = 1
 
 MSE_crit = nn.MSELoss()
-rec_net = select_network(NET_TYPE, inp_size, hid_size, args.nonlin, args.rinit, args.iinit, args.cuda)
+rec_net = select_network(NET_TYPE, inp_size, hid_size, args.nonlin, args.rinit, args.iinit, args.cuda, None, None)
 
 net = Net(hid_size, out_size, rec_net)
 if CUDA:

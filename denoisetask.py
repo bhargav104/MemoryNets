@@ -26,7 +26,7 @@ parser.add_argument('--labels', type=int, default=9, help='number of labels in t
 parser.add_argument('--c-length', type=int, default=10, help='sequence length')
 parser.add_argument('--nonlin', type=str, default='modrelu', help='non linearity none, relu, tanh, sigmoid')
 parser.add_argument('--vari', type=str2bool, default=False, help='variable length')
-parser.add_argument('--lr', type=float, default=1e-4) #0.0001
+parser.add_argument('--lr', type=float, default=1e-3) #0.0001
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
 parser.add_argument('--iinit', type=str, default="kaiming", help='input weight matrix initialization')
 parser.add_argument('--batch', type=int, default=10)
@@ -38,8 +38,9 @@ parser.add_argument('--name', type=str, default='default', help='save name')
 parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
 parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
 parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
-parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
+parser.add_argument('--rsize', type=int, default=15, help='Size of long term bucket')
 parser.add_argument('--cutoff', type=float, default=0.0, help='Cutoff for long term bucket')
+parser.add_argument('--clip', type=float, default=1.0, help='Clip norms value')
 
 args = parser.parse_args()
 
@@ -86,6 +87,7 @@ class Model(nn.Module):
         accuracy = 0
         va = []
         attn = 1.0
+        rlist = []
         for i in range(len(x)):
             #if i >= 110:
             #    attn = 0.0
@@ -93,8 +95,9 @@ class Model(nn.Module):
                 inp = onehot(x[i])
             else:
                 inp = x[i]
-            hidden, vals = self.rnn.forward(inp, hidden, attn)
+            hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
             va.append(vals)
+            rlist.append(rpos)
             out = self.lin(hidden)
             loss += self.loss_func(out, y[i].squeeze(1))
 
@@ -107,7 +110,7 @@ class Model(nn.Module):
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, va
+        return loss, accuracy, va, torch.stack(rlist)
 
     def loss(self, logits, y):
         print(logits.shape)
@@ -134,7 +137,7 @@ def train_model(net, optimizer, batch_size, T):
     tx = tx.transpose(0, 1)
     ty = ty.transpose(0, 1)
 
-    for i in range(200000):
+    for i in range(100000):
 
         s_t = time.time()
         if args.vari:
@@ -149,9 +152,9 @@ def train_model(net, optimizer, batch_size, T):
         y = y.transpose(0, 1)
         optimizer.zero_grad()
 
-        loss, accuracy, vals = net.forward(x, y)
+        loss, accuracy, vals, _ = net.forward(x, y)
         loss.backward()
-        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), 'inf')
+        norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         save_norms.append(norm)
         #writer.add_scalar('Grad Norms', norm, i)
 
@@ -162,8 +165,8 @@ def train_model(net, optimizer, batch_size, T):
         optimizer.step()
         accs.append(accuracy)
         '''
-        if i % 1000 == 0:
-            tl, ta, vals = net.forward(tx, ty)
+        if i % 250 == 0:
+            tl, ta, vals, rrs = net.forward(tx, ty)
             hist = net.rnn.long_scores.squeeze(1).detach().cpu().numpy()
             fig, ax = plt.subplots()
             plt.bar(np.arange(120), hist)
@@ -184,6 +187,15 @@ def train_model(net, optimizer, batch_size, T):
                     if j > 10:
                         adv = j - 10
                     mat[j][k+adv] = vals[j][1][k][0]
+                    adv = 0
+                    if j > args.lastk:
+                        adv = j - args.lastk
+                    if k < args.lastk:
+                        #print(j, k+adv, vals[j][1][k][0])
+                        #time.sleep(0.1)
+                        mat[j][k+adv] = vals[j][1][k][0]
+                    elif rrs[j][0][k-args.lastk].item() != -1.0:
+                        mat[j][int(rrs[j][0][k-args.lastk].item())] = vals[j][1][k][0]
             fig, ax = plt.subplots(figsize=(15,10))
             ax = sns.heatmap(mat, cmap='Greys')
             ax.set_title(title)
@@ -191,15 +203,14 @@ def train_model(net, optimizer, batch_size, T):
             plt.savefig('heatmaps_denoise/' + name + '.png')
             plt.close(fig)
         '''
-
-        if args.log and len(accs) == 400:
+        if args.log and len(accs) == 200:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
             writer.add_scalar('Loss', v2, lc)
             writer.add_scalar('Accuracy', v1, lc)
             lc += 1
             accs, losses = [], []
-
+            torch.save(net.state_dict(), './reldenoiselogs/' + args.name + '.pt')
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss.item(), accuracy))
 
@@ -221,7 +232,7 @@ def train_model(net, optimizer, batch_size, T):
         '{}_{}.pth.tar'.format(NET_TYPE, i)
     )
     '''
-    torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
+    torch.save(net.state_dict(), './reldenoiselogs/' + args.name + '.pt')
     return
 
 
@@ -337,7 +348,7 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
         fp.write(('{}: {}'.format(key, val)))
 '''
 if args.log:
-    writer = SummaryWriter('./denoiselogs/' + args.name + '/')
+    writer = SummaryWriter('./reldenoiselogs/' + args.name + '/')
 
 torch.cuda.manual_seed(random_seed)
 torch.manual_seed(random_seed)

@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -98,7 +98,7 @@ class Model(nn.Module):
             else:
                 self.rnn.app = 0
             ctr += 1
-            h, vals = self.rnn(inp, h, 1.0)
+            h, vals, _ = self.rnn(inp, h, 1.0)
             va.append(vals)
             h.retain_grad()
             hiddens.append(h)
@@ -172,6 +172,7 @@ def train_model(net, optimizer, num_epochs):
             loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
+            print(loss.item())
 
             accs.append(correct / float(processed))
 
@@ -202,7 +203,7 @@ def train_model(net, optimizer, num_epochs):
             writer.add_scalar('Train acc', np.mean(accs), epoch)
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
-
+        '''
         tl, ta, vals = net.forward(tx, ty, order)
         title = str(ty[0].item())
         mat = np.zeros((112, 112))
@@ -218,6 +219,7 @@ def train_model(net, optimizer, num_epochs):
         name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
         plt.savefig('heatmaps_mnist/' + name + '.png')
         plt.close(fig)
+        '''
         # save data
         '''
         if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:
@@ -287,8 +289,8 @@ batch_size = args.batch
 out_size = 10
 
 rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
-
 net = Model(hid_size, rnn)
+net.rnn.T = 784
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()
