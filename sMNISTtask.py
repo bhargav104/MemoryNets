@@ -17,8 +17,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
-
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+     
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -77,6 +77,7 @@ class Model(nn.Module):
     def __init__(self, hidden_size, rnn):
         super(Model, self).__init__()
         self.rnn = rnn
+        self.rnn.T = 784
         self.hidden_size = hidden_size
         self.lin = nn.Linear(hidden_size, 10)
         self.loss_func = nn.CrossEntropyLoss()
@@ -203,23 +204,22 @@ def train_model(net, optimizer, num_epochs):
             writer.add_scalar('Train acc', np.mean(accs), epoch)
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
-        '''
-        tl, ta, vals = net.forward(tx, ty, order)
-        title = str(ty[0].item())
-        mat = np.zeros((112, 112))
-        for j in range(112):
-            if vals[j][0] is None:
-                continue
-            #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
-            for k in range(vals[j][1].size(0)):
-                mat[j][k] = vals[j][0][k][0]
-        fig, ax = plt.subplots(figsize=(15,10))
-        ax = sns.heatmap(mat, cmap='Greys')
-        ax.set_title(title)
-        name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
-        plt.savefig('heatmaps_mnist/' + name + '.png')
-        plt.close(fig)
-        '''
+
+        #tl, ta, vals = net.forward(tx, ty, order)
+        #title = str(ty[0].item())
+        #mat = np.zeros((112, 112))
+        #for j in range(112):
+        #    if vals[j][0] is None:
+        #        continue
+        #    #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
+        #    for k in range(vals[j][1].size(0)):
+        #        mat[j][k] = vals[j][0][k][0]
+        #fig, ax = plt.subplots(figsize=(15,10))
+        #ax = sns.heatmap(mat, cmap='Greys')
+        #ax.set_title(title)
+        #name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
+        #plt.savefig('heatmaps_mnist/' + name + '.png')
+        #plt.close(fig)
         # save data
         '''
         if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:

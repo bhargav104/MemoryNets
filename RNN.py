@@ -76,7 +76,7 @@ class RNN(nn.Module):
         if self.nonlinearity:
             h = self.nonlinearity(h)
         self.memory.append(h)
-        return h, (None, None), None
+        return h, (None, None)
 
 class MemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -172,9 +172,9 @@ class MemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None), None
+            return h, (None, None)
         else:
-            return h, (es, alphas), None
+            return h, (es, alphas)
 
 class RelMemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, last_k, rsize, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -342,6 +342,6 @@ class RelMemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None), ret_pos
+            return h, (None, None)
         else:
-            return h, (es_comb, alphas), ret_pos
+            return h, (es_comb, alphas)
