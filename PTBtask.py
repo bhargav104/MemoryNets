@@ -358,8 +358,8 @@ except KeyboardInterrupt:
     print('Exiting from training early')
 
 # Load the best saved model.
-# with open(SAVEDIR + args.save, 'rb') as f:
-#     model = torch.load(f)
+with open(SAVEDIR + args.save, 'rb') as f:
+    model = torch.load(f)
 
 # Run on test data.
 test_loss, test_accuracy = evaluate(test_data)
