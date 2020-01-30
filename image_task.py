@@ -13,7 +13,7 @@ from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
 from torch._utils import _accumulate
 from torch.utils.data import Subset
-import seaborn as sns
+#import seaborn as sns
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
@@ -39,7 +39,7 @@ parser.add_argument('--k', type=int, default=1, help='Attend ever k timesteps')
 parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
 parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
 parser.add_argument('--dataset', type=str, default='MNIST',
-                    choices=['MNIST', 'CIFAR10'] help='dataset')
+                    choices=['MNIST', 'CIFAR10'], help='dataset')
 
 args = parser.parse_args()
 
@@ -54,13 +54,25 @@ np.random.seed(args.random_seed)
 if args.dataset == 'MNIST':
     trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
     testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
-elif args.dataset == 'CIFAR10':
-    trainset = T.datasets.MNIST(root='./CIFAR10', train=True, download=True, transform=T.transforms.ToTensor())
-    testset = T.datasets.MNIST(root='./CIFAR10', train=False, download=True, transform=T.transforms.ToTensor())
-R = rng.permutation(len(trainset))
-train_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000))
-valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000, 60000))
+    train_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000))
+    valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000, 60000))
 
+
+elif args.dataset == 'CIFAR10':
+    transform = T.transforms.Compose(
+                [T.transforms.ToTensor(),
+                 T.transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+                )
+    trainset = T.datasets.CIFAR10(root='./CIFAR10', train=True, download=True, transform=transform)
+    testset = T.datasets.CIFAR10(root='./CIFAR10', train=False, download=True, transform=transform)
+    rng = np.random.RandomState(1234)
+    R = rng.permutation(len(trainset))
+
+    train_sampler = torch.utils.data.sampler.SubsetRandomSampler(R[:40000])
+    valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(R[40000:])
+
+
+print(len(trainset))
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=train_sampler,
                                           num_workers=2)
 valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler,
@@ -90,18 +102,18 @@ class Model(nn.Module):
         h = None
 
         hiddens = []
-        inputs = inputs[:, order]
+        inputs = inputs[:, : ,order]
         ctr = 0
         va = []
         for i in range(self.rnn.T):
-            inp = inputs[:, i].unsqueeze(1)
+            inp = inputs[:,:, i]
             #inp = inputs[:,7*i:7*(i+1)]
             if ctr % args.k == 0:
                 self.rnn.app = 1
             else:
                 self.rnn.app = 0
             ctr += 1
-            h, vals, _ = self.rnn(inp, h, 1.0)
+            h, vals = self.rnn(inp, h, 1.0)
             va.append(vals)
             h.retain_grad()
             hiddens.append(h)
@@ -121,7 +133,7 @@ def test_model(net, dataloader):
         for i, data in enumerate(dataloader):
 
             x, y = data
-            x = x.view(-1, net.rnn.T)
+            x = x.view(-1,x.shape[1] ,net.rnn.T)
             if CUDA:
                 x = x.cuda()
                 y = y.cuda()
@@ -158,7 +170,7 @@ def train_model(net, optimizer, num_epochs):
 
         for i, data in enumerate(trainloader, 0):
             inp_x, inp_y = data
-            inp_x = inp_x.view(-1, net.rnn.T)
+            inp_x = inp_x.view(-1,inp_x.shape[1], net.rnn.T)
             if chk == 1:
                 tx = inp_x[0].unsqueeze(0)
                 ty = inp_y[0].unsqueeze(0)
@@ -171,11 +183,9 @@ def train_model(net, optimizer, num_epochs):
                 inp_x = inp_x.cuda()
                 inp_y = inp_y.cuda()
             optimizer.zero_grad()
-
             loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
-            print(loss.item())
 
             accs.append(correct / float(processed))
 
@@ -308,7 +318,7 @@ net = Model(hid_size, rnn, T)
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()
-print('sMNIST task')
+print('{} task'.format(args.dataset))
 print(NET_TYPE)
 print('Cuda: {}'.format(CUDA))
 
