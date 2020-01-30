@@ -38,30 +38,33 @@ parser.add_argument('--load', action='store_true', default=False, help='load, do
 parser.add_argument('--k', type=int, default=1, help='Attend ever k timesteps')
 parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
 parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
+parser.add_argument('--dataset', type=str, default='MNIST',
+                    choices=['MNIST', 'CIFAR10'] help='dataset')
 
 args = parser.parse_args()
 
 torch.cuda.manual_seed(args.random_seed)
 torch.manual_seed(args.random_seed)
 np.random.seed(args.random_seed)
-rng = np.random.RandomState(1234)
-if args.permute:
-    order = rng.permutation(784)
-else:
-    order = np.arange(784)
+
 
 #trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 #valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 #offset = 10000
-trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
-
+if args.dataset == 'MNIST':
+    trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
+    testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
+elif args.dataset == 'CIFAR10':
+    trainset = T.datasets.MNIST(root='./CIFAR10', train=True, download=True, transform=T.transforms.ToTensor())
+    testset = T.datasets.MNIST(root='./CIFAR10', train=False, download=True, transform=T.transforms.ToTensor())
 R = rng.permutation(len(trainset))
 train_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000))
 valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000, 60000))
 
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=train_sampler, num_workers=2)
-valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler, num_workers=2)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=train_sampler,
+                                          num_workers=2)
+valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler,
+                                        num_workers=2)
 testloader = torch.utils.data.DataLoader(testset, batch_size=100, num_workers=2)
 '''
 lengths = (len(trainset) - offset, offset)
@@ -74,10 +77,10 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch, num_wor
 '''
 
 class Model(nn.Module):
-    def __init__(self, hidden_size, rnn):
+    def __init__(self, hidden_size, rnn, im_size):
         super(Model, self).__init__()
         self.rnn = rnn
-        self.rnn.T = 784
+        self.rnn.T = im_size
         self.hidden_size = hidden_size
         self.lin = nn.Linear(hidden_size, 10)
         self.loss_func = nn.CrossEntropyLoss()
@@ -90,8 +93,7 @@ class Model(nn.Module):
         inputs = inputs[:, order]
         ctr = 0
         va = []
-        #for input in torch.unbind(inputs, dim=1):
-        for i in range(784):
+        for i in range(self.rnn.T):
             inp = inputs[:, i].unsqueeze(1)
             #inp = inputs[:,7*i:7*(i+1)]
             if ctr % args.k == 0:
@@ -119,7 +121,7 @@ def test_model(net, dataloader):
         for i, data in enumerate(dataloader):
 
             x, y = data
-            x = x.view(-1, 784)
+            x = x.view(-1, net.rnn.T)
             if CUDA:
                 x = x.cuda()
                 y = y.cuda()
@@ -156,7 +158,7 @@ def train_model(net, optimizer, num_epochs):
 
         for i, data in enumerate(trainloader, 0):
             inp_x, inp_y = data
-            inp_x = inp_x.view(-1, 784)
+            inp_x = inp_x.view(-1, net.rnn.T)
             if chk == 1:
                 tx = inp_x[0].unsqueeze(0)
                 ty = inp_y[0].unsqueeze(0)
@@ -260,8 +262,8 @@ random_seed = args.random_seed
 NET_TYPE = args.net_type
 CUDA = args.cuda
 SAVEFREQ = args.save_freq
-inp_size = 1
-hid_size = args.nhid  # calc_hidden_size(NET_TYPE,165000,1,10)
+
+hid_size = args.nhid
 nonlins = ['relu', 'tanh', 'sigmoid', 'modrelu']
 nonlin = args.nonlin.lower()
 print(nonlin)
@@ -281,16 +283,28 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
 '''
-if args.log:
-    writer = SummaryWriter('./mnistlogs/' + args.name + '/')
 
-T = 784
+if args.dataset == 'MNIST':
+    T = 784
+    inp_size = 1
+    if args.log:
+        writer = SummaryWriter('./mnistlogs/' + args.name + '/')
+elif args.dataset == 'CIFAR10':
+    T = 32*32
+    inp_size = 3
+    if args.log:
+        writer = SummaryWriter('./cifar10logs/' + args.name + '/')
+rng = np.random.RandomState(1234)
+if args.permute:
+    order = rng.permutation(T)
+else:
+    order = np.arange(T)
+
 batch_size = args.batch
 out_size = 10
 
 rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
-net = Model(hid_size, rnn)
-net.rnn.T = 784
+net = Model(hid_size, rnn, T)
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()
