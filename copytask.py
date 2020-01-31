@@ -17,7 +17,9 @@ from utils import str2bool, select_network
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+parser.add_argument('--net-type', type=str, default='RNN',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM'],
+                    help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=300, help='delay between sequence lengths')
@@ -109,7 +111,6 @@ class Model(nn.Module):
         hiddens = []
         loss = 0
         accuracy = 0
-        attn = 1.0
         self.rnn.app = 1
         rlist = []
         for i in range(len(x)):
@@ -117,9 +118,9 @@ class Model(nn.Module):
             #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
-                hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(inp, hidden)
             else:
-                hidden, vals, rpos = self.rnn.forward(x[i], hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(x[i], hidden)
             rlist.append(rpos)
             va.append(vals)
             hidden.retain_grad()

@@ -67,7 +67,7 @@ class RNN(nn.Module):
             nn.init.kaiming_normal_(self.U.weight.data)
 
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, reset=False):
         if hidden is None or reset:
             if hidden is None:
                 hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
@@ -77,7 +77,7 @@ class RNN(nn.Module):
         if self.nonlinearity:
             h = self.nonlinearity(h)
         self.memory.append(h)
-        return h, (None, None)
+        return h, (None, None), None
 
 class MemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -140,7 +140,7 @@ class MemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
@@ -174,9 +174,9 @@ class MemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None)
+            return h, (None, None), None
         else:
-            return h, (es, alphas)
+            return h, (es, alphas), None
 
 class RelMemRNN(nn.Module):
     def __init__(self, inp_size, hid_size, last_k, rsize, nonlin, bias=True, cuda=False, r_initializer=None,
@@ -241,7 +241,7 @@ class RelMemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
@@ -347,4 +347,4 @@ class RelMemRNN(nn.Module):
             self.count = 1
             return h, (None, None)
         else:
-            return h, (es_comb, alphas)
+            return h, (es_comb, alphas), ret_pos
