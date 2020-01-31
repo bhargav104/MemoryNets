@@ -72,7 +72,7 @@ class Net(nn.Module):
         hidden = None
         hiddens = []
         for i in range(len(x)):
-            hidden, _, _ = self.rec_net.forward(x[i], hidden, 1.0)
+            hidden, _, _ = self.rec_net.forward(x[i], hidden)
             hidden.retain_grad()
             hiddens.append(hidden)
         out = self.ol(hidden)

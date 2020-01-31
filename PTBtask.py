@@ -95,7 +95,7 @@ class RNNModel(nn.Module):
         emb = self.encoder(input)
         hs = []
         for i in range(emb.shape[0]):
-            hidden, _ = self.rnn(emb[i], hidden,1.0,i==0)
+            hidden, _ = self.rnn(emb[i], hidden, i==0)
             hs.append(hidden)
         output = torch.stack(hs)
 

@@ -96,7 +96,6 @@ class Model(nn.Module):
         self.hidden_size = hidden_size
         self.lin = nn.Linear(hidden_size, 10)
         self.loss_func = nn.CrossEntropyLoss()
-        #self.params = rnn.params() + [self.lin.weight, self.lin.bias]
 
     def forward(self, inputs, y, order):
         h = None
@@ -113,7 +112,7 @@ class Model(nn.Module):
             else:
                 self.rnn.app = 0
             ctr += 1
-            h, vals = self.rnn(inp, h, 1.0)
+            h, vals = self.rnn(inp, h)
             va.append(vals)
             h.retain_grad()
             hiddens.append(h)

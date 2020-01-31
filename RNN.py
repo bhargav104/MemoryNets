@@ -67,7 +67,7 @@ class RNN(nn.Module):
             nn.init.kaiming_normal_(self.U.weight.data)
 
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, reset=False):
         if hidden is None or reset:
             if hidden is None:
                 hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
@@ -140,7 +140,7 @@ class MemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
@@ -241,7 +241,7 @@ class RelMemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)

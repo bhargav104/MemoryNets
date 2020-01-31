@@ -109,7 +109,6 @@ class Model(nn.Module):
         hiddens = []
         loss = 0
         accuracy = 0
-        attn = 1.0
         self.rnn.app = 1
         rlist = []
         for i in range(len(x)):
@@ -117,9 +116,9 @@ class Model(nn.Module):
             #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
-                hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(inp, hidden)
             else:
-                hidden, vals, rpos = self.rnn.forward(x[i], hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(x[i], hidden)
             rlist.append(rpos)
             va.append(vals)
             hidden.retain_grad()
