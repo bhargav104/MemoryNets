@@ -11,7 +11,9 @@ import shutil
 
 parser = argparse.ArgumentParser(description='add task parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM'],
+                    help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=100, help='delay between sequence lengths')

@@ -18,7 +18,9 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
      
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM'],
+                    help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -112,7 +114,7 @@ class Model(nn.Module):
             else:
                 self.rnn.app = 0
             ctr += 1
-            h, vals = self.rnn(inp, h)
+            h, vals, _ = self.rnn(inp, h)
             va.append(vals)
             h.retain_grad()
             hiddens.append(h)

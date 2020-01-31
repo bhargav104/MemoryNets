@@ -46,4 +46,4 @@ class LSTM(nn.Module):
         self.ot = ot
         self.ct = torch.mul(ft, self.ct) + torch.mul(it, gt)
         hidden = torch.mul(ot, self.tanh(self.ct))
-        return hidden, self.ct
+        return hidden, (None, None), None

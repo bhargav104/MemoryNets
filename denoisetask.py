@@ -17,7 +17,9 @@ import sys
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+parser.add_argument('--net-type', type=str, default='RNN',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM'],
+                    help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=200, help='delay between sequence lengths')
@@ -94,7 +96,8 @@ class Model(nn.Module):
                 inp = x[i]
             hidden, vals, rpos = self.rnn.forward(inp, hidden)
             va.append(vals)
-            rlist.append(rpos)
+            if rpos is not None:
+                rlist.append(rpos)
             out = self.lin(hidden)
             loss += self.loss_func(out, y[i].squeeze(1))
 
@@ -107,7 +110,9 @@ class Model(nn.Module):
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, va, torch.stack(rlist)
+        if len(rlist) > 0:
+            rlist = torch.stack(rlist)
+        return loss, accuracy, va, rlist
 
     def loss(self, logits, y):
         print(logits.shape)

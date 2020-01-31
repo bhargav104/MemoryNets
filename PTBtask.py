@@ -95,7 +95,7 @@ class RNNModel(nn.Module):
         emb = self.encoder(input)
         hs = []
         for i in range(emb.shape[0]):
-            hidden, _ = self.rnn(emb[i], hidden, i==0)
+            hidden, _, _ = self.rnn(emb[i], hidden, i==0)
             hs.append(hidden)
         output = torch.stack(hs)
 
@@ -105,6 +105,7 @@ class RNNModel(nn.Module):
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--net-type', type=str, default='RelMemNet',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', '']
                     help='rnn net type')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
