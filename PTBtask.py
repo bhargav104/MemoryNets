@@ -206,7 +206,7 @@ print(args)
 criterion = nn.CrossEntropyLoss()
 
 if args.log:
-    writer = SummaryWriter('./mnistlogs/' + args.name + '/')
+    writer = SummaryWriter('./ptblogs/' + args.name + '/')
 
 
 
@@ -305,7 +305,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5)
 try:
     exp_time = "{0:%Y-%m-%d}_{0:%H-%M-%S}".format(datetime.now())
     SAVEDIR = os.path.join('./saves',
-                           'sMNIST',
+                           'ptb',
                            NET_TYPE,
                            str(args.random_seed),
                            exp_time)
