@@ -345,6 +345,6 @@ class RelMemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None)
+            return h, (None, None), None
         else:
             return h, (es_comb, alphas), ret_pos
