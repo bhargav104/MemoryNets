@@ -105,7 +105,7 @@ class RNNModel(nn.Module):
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--net-type', type=str, default='RelMemNet',
-                    choices=['RNN', 'MemRNN', 'RelMemRNN', '']
+                    choices=['RNN', 'MemRNN', 'RelMemRNN'],
                     help='rnn net type')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
