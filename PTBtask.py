@@ -95,7 +95,7 @@ class RNNModel(nn.Module):
         emb = self.encoder(input)
         hs = []
         for i in range(emb.shape[0]):
-            hidden, _ = self.rnn(emb[i], hidden,1.0,i==0)
+            hidden, _, _ = self.rnn(emb[i], hidden,1.0,i==0)
             hs.append(hidden)
         output = torch.stack(hs)
 
@@ -126,7 +126,7 @@ parser.add_argument('--save', type=str, default='model.pt',
                     help='path to save the final model')
 parser.add_argument('--log', action='store_true', default=False, help='Use tensorboardX')
 parser.add_argument('--name', type=str, default='default', help='save name')
-parser.add_argument('--lr', type=float, default=0.0008)
+parser.add_argument('--lr', type=float, default=0.0001)
 parser.add_argument('--rinit', type=str, default="cayley",
                     choices=['random', 'cayley', 'henaff', 'xavier'],
                     help='recurrent weight matrix initialization')
@@ -135,7 +135,7 @@ parser.add_argument('--iinit', type=str, default="kaiming",
                     help='input weight matrix initialization')
 parser.add_argument('--nonlin', type=str, default='modrelu',
                     choices=['none', 'modrelu', 'tanh', 'relu', 'sigmoid'],
-                    help='non linearity none, relu, tanh, sigmoid')
+                    help='non linearity none, relu, tanh, sigmoid') 
 parser.add_argument('--alpha', type=float, default=0.9)
 parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
 parser.add_argument('--rsize', type=int, default=10, help='Size of long term bucket')
@@ -196,6 +196,7 @@ rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit,
                      args.iinit, CUDA, args.lastk, args.rsize)
 
 model = RNNModel(rnn, ntokens, inp_size, hid_size, args.tied)
+#model = torch.load('saves/PTB/RelMemRNN/400/2020-01-31_12-55-07rel150adam0.0001tanh')
 if args.cuda:
     model.cuda()
 print('Language Task')
@@ -205,7 +206,7 @@ print(args)
 criterion = nn.CrossEntropyLoss()
 
 if args.log:
-    writer = SummaryWriter('./mnistlogs/' + args.name + '/')
+    writer = SummaryWriter('./ptblogs/' + args.name + '/')
 
 
 
@@ -269,7 +270,7 @@ def train(optimizer):
         if NET_TYPE == 'nnRNN' and alam > 0:
             alpha_loss = model.rnn.alpha_loss(alam)
             loss += alpha_loss
-
+        #print(loss.item())
         loss.backward()
 
         optimizer.step()
@@ -304,7 +305,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5)
 try:
     exp_time = "{0:%Y-%m-%d}_{0:%H-%M-%S}".format(datetime.now())
     SAVEDIR = os.path.join('./saves',
-                           'sMNIST',
+                           'PTB',
                            NET_TYPE,
                            str(args.random_seed),
                            exp_time)
@@ -320,7 +321,7 @@ try:
     for epoch in range(1, args.epochs + 1):
         epoch_start_time = time.time()
         loss = train(optimizer)
-        tr_losses.append(loss)
+        tr_losses.append(loss)  
         val_loss, val_acc = evaluate(val_data)
         v_losses.append(val_loss)
         v_accs.append(val_acc)
@@ -332,7 +333,8 @@ try:
                                                                                        val_loss, math.exp(val_loss),
                                                                                        val_loss / math.log(2), val_acc))
         print('-' * 89)
-
+        writer.add_scalar('Valid Loss', val_loss, epoch - 1)
+        writer.add_scalar('Valid BPC', val_loss / math.log(2), epoch - 1)
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             with open(SAVEDIR + args.save, 'wb') as f:
@@ -358,15 +360,18 @@ except KeyboardInterrupt:
     print('Exiting from training early')
 
 # Load the best saved model.
-# with open(SAVEDIR + args.save, 'rb') as f:
-#     model = torch.load(f)
+with open(SAVEDIR + args.save, 'rb') as f:
+    model = torch.load(f)
 
-# Run on test data.
 test_loss, test_accuracy = evaluate(test_data)
 print('=' * 89)
 print('| End of training | test loss {:5.2f} | test ppl {:8.2f}, test bpc {:8.2f} | test acc {:8.2f}'.format(
     test_loss, math.exp(test_loss), test_loss / math.log(2), test_accuracy))
 print('=' * 89)
-
+writer.add_scalar('Valid Loss', test_loss, args.epochs)
+writer.add_scalar('Valid BPC', test_loss / math.log(2), args.epochs)
 with open(SAVEDIR + 'testdat.txt', 'w') as fp:
     fp.write('Test loss: {} Test Accuracy: {}'.format(test_loss, test_accuracy))
+
+
+# --log --cuda --nonlin=tanh --adam --name=rel150adam0.0001tanh --save=name....1.54, 67%

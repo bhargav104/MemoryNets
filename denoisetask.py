@@ -110,7 +110,7 @@ class Model(nn.Module):
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, va, torch.stack(rlist)
+        return loss, accuracy, va, None
 
     def loss(self, logits, y):
         print(logits.shape)

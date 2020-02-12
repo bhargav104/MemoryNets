@@ -173,7 +173,7 @@ def train_model(net, optimizer, num_epochs):
             loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
-            print(loss.item())
+            #print(loss.item())
 
             accs.append(correct / float(processed))
 
@@ -192,7 +192,7 @@ def train_model(net, optimizer, num_epochs):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             tl, ta = test_model(net, testloader)
-            torch.save(net.state_dict(), './mnistlogs/' + args.name + '.pt')
+            torch.save(net.state_dict(), './relmnistlogs/' + args.name + '.pt')
 
 
         print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Test Loss: {} Test Accuracy {}'.format(
@@ -282,7 +282,7 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
         fp.write(('{}: {}'.format(key, val)))
 '''
 if args.log:
-    writer = SummaryWriter('./mnistlogs/' + args.name + '/')
+    writer = SummaryWriter('./relmnistlogs/' + args.name + '/')
 
 T = 784
 batch_size = args.batch
