@@ -17,11 +17,11 @@ from utils import str2bool, select_network
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'], help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=300, help='delay between sequence lengths')
-parser.add_argument('--random-seed', type=int, default=400, help='random seed')
+parser.add_argument('--random-seed', type=int, default=100, help='random seed')
 parser.add_argument('--labels', type=int, default=8, help='number of labels in the output and input')
 parser.add_argument('--c-length', type=int, default=10, help='sequence length')
 parser.add_argument('--nonlin', type=str, default='modrelu',
@@ -112,14 +112,16 @@ class Model(nn.Module):
         attn = 1.0
         self.rnn.app = 1
         rlist = []
+        hlist = []
         for i in range(len(x)):
             #if i >= 11:
             #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
-                hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(inp, hidden)
             else:
-                hidden, vals, rpos = self.rnn.forward(x[i], hidden, attn)
+                hidden, vals, rpos = self.rnn.forward(x[i], hidden)
+            hlist.append(hidden)
             rlist.append(rpos)
             va.append(vals)
             hidden.retain_grad()
@@ -133,7 +135,7 @@ class Model(nn.Module):
                 correct = preds == actual
 
                 accuracy += correct.sum().item()
-
+            
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
         return loss, accuracy, hiddens, va, None
@@ -339,7 +341,7 @@ if args.onehot:
     udir = 'onehot/' + udir
 
 if not args.vari:
-    n_steps = 50000 #100000
+    n_steps = 200000 #100000
     LOGDIR = './logs/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     SAVEDIR = './saves/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     print(SAVEDIR)

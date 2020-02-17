@@ -71,9 +71,10 @@ class RNN(nn.Module):
             nn.init.kaiming_normal_(self.U.weight.data)
 
 
-    def forward(self, x, hidden, attn, reset=False):
-        if hidden is None:
-            hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)
+    def forward(self, x, hidden, reset=False):
+        if hidden is None or reset:
+            if hidden is None:
+                hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)                
             self.memory = []
 
         h = self.U(x) + self.V(hidden)
@@ -143,11 +144,12 @@ class MemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
-            hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
+            if hidden is None:
+                hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
@@ -243,11 +245,12 @@ class RelMemRNN(nn.Module):
         elif self.i_initializer == 'kaiming':
             nn.init.kaiming_normal_(self.U.weight.data)
 
-    def forward(self, x, hidden, attn, reset=False):
+    def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
             #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
-            hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
+            if hidden is None:
+                hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
             self.tcnt = -1
             self.long_scores = torch.zeros(self.T, x.shape[0], requires_grad=False).cuda()
             self.long_ctrs = torch.zeros(x.shape[0], requires_grad=False).cuda()
@@ -346,6 +349,6 @@ class RelMemRNN(nn.Module):
         #print(h)
         if self.count == 0:
             self.count = 1
-            return h, (None, None), ret_pos
+            return h, (None, None), None
         else:
             return h, (es_comb, alphas), ret_pos

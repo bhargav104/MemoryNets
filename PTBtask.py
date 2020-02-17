@@ -95,7 +95,7 @@ class RNNModel(nn.Module):
         emb = self.encoder(input)
         hs = []
         for i in range(emb.shape[0]):
-            hidden, _, _ = self.rnn(emb[i], hidden,1.0,i==0)
+            hidden, _, _ = self.rnn(emb[i], hidden, reset=i == 0)
             hs.append(hidden)
         output = torch.stack(hs)
 
@@ -105,6 +105,7 @@ class RNNModel(nn.Module):
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank RNN/LSTM Language Model')
 parser.add_argument('--net-type', type=str, default='RelMemNet',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
                     help='rnn net type')
 parser.add_argument('--emsize', type=int, default=200,
                     help='size of word embeddings')
@@ -305,7 +306,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.5)
 try:
     exp_time = "{0:%Y-%m-%d}_{0:%H-%M-%S}".format(datetime.now())
     SAVEDIR = os.path.join('./saves',
-                           'PTB',
+                           'ptb',
                            NET_TYPE,
                            str(args.random_seed),
                            exp_time)
@@ -375,3 +376,7 @@ with open(SAVEDIR + 'testdat.txt', 'w') as fp:
 
 
 # --log --cuda --nonlin=tanh --adam --name=rel150adam0.0001tanh --save=name....1.54, 67%
+
+'''
+LSTM - rms 0.001 1.43 and 0.70 acc
+'''

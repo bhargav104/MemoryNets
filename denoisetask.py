@@ -17,11 +17,13 @@ import sys
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+parser.add_argument('--net-type', type=str, default='RNN',
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
+                    help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=200, help='delay between sequence lengths')
-parser.add_argument('--random-seed', type=int, default=400, help='random seed')
+parser.add_argument('--random-seed', type=int, default=100, help='random seed')
 parser.add_argument('--labels', type=int, default=9, help='number of labels in the output and input')
 parser.add_argument('--c-length', type=int, default=10, help='sequence length')
 parser.add_argument('--nonlin', type=str, default='modrelu', help='non linearity none, relu, tanh, sigmoid')
@@ -86,18 +88,16 @@ class Model(nn.Module):
         loss = 0
         accuracy = 0
         va = []
-        attn = 1.0
         rlist = []
         for i in range(len(x)):
-            #if i >= 110:
-            #    attn = 0.0
             if args.onehot:
                 inp = onehot(x[i])
             else:
                 inp = x[i]
-            hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
+            hidden, vals, rpos = self.rnn.forward(inp, hidden)
             va.append(vals)
-            rlist.append(rpos)
+            if rpos is not None:
+                rlist.append(rpos)
             out = self.lin(hidden)
             loss += self.loss_func(out, y[i].squeeze(1))
 
@@ -110,7 +110,10 @@ class Model(nn.Module):
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, va, None
+
+        if len(rlist) > 0:
+            rlist = torch.stack(rlist)
+        return loss, accuracy, va, rlist
 
     def loss(self, logits, y):
         print(logits.shape)
@@ -137,7 +140,7 @@ def train_model(net, optimizer, batch_size, T):
     tx = tx.transpose(0, 1)
     ty = ty.transpose(0, 1)
 
-    for i in range(100000):
+    for i in range(200000):
 
         s_t = time.time()
         if args.vari:
