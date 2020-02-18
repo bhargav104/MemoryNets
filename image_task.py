@@ -187,10 +187,6 @@ def train_model(net, optimizer, num_epochs):
             loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
-<<<<<<< HEAD:sMNISTtask.py
-            #print(loss.item())
-=======
->>>>>>> 0f05a92a08031c9ca9ee7288f9aa3210e8e44c72:image_task.py
 
             accs.append(correct / float(processed))
 
@@ -298,11 +294,8 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
 '''
-<<<<<<< HEAD:sMNISTtask.py
 if args.log:
     writer = SummaryWriter('./relmnistlogs/' + args.name + '/')
-=======
->>>>>>> 0f05a92a08031c9ca9ee7288f9aa3210e8e44c72:image_task.py
 
 if args.dataset == 'MNIST':
     T = 784

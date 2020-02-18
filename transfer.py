@@ -17,7 +17,7 @@ from utils import str2bool, select_network
 
 parser = argparse.ArgumentParser(description='auglang parameters')
 
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN'], help='options: RNN, MemRNN, RelMemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM  '], help='options: RNN, MemRNN, RelMemRNN')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--T', type=int, default=300, help='delay between sequence lengths')

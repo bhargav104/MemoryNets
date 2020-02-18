@@ -247,7 +247,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         '{}_{}.pth.tar'.format(NET_TYPE, i)
     )
     '''
-    torch.save(net.state_dict(), './copylogs/' + args.name + '.pt')
+    torch.save(net.state_dict(), './relcopylogs/' + args.name + '.pt')
     return
 
 
