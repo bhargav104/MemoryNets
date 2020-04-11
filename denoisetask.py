@@ -89,12 +89,15 @@ class Model(nn.Module):
         accuracy = 0
         va = []
         rlist = []
+        hiddens = []
         for i in range(len(x)):
             if args.onehot:
                 inp = onehot(x[i])
             else:
                 inp = x[i]
             hidden, vals, rpos = self.rnn.forward(inp, hidden)
+            hidden.retain_grad()
+            hiddens.append(hidden)
             va.append(vals)
             if rpos is not None:
                 rlist.append(rpos)
@@ -113,7 +116,7 @@ class Model(nn.Module):
 
         if len(rlist) > 0:
             rlist = torch.stack(rlist)
-        return loss, accuracy, va, rlist
+        return loss, accuracy, va, hiddens
 
     def loss(self, logits, y):
         print(logits.shape)
@@ -139,8 +142,9 @@ def train_model(net, optimizer, batch_size, T):
         ty = ty.cuda()
     tx = tx.transpose(0, 1)
     ty = ty.transpose(0, 1)
-
-    for i in range(200000):
+    n_steps = 200
+    W_grads = []
+    for i in range(n_steps):
 
         s_t = time.time()
         if args.vari:
@@ -155,8 +159,18 @@ def train_model(net, optimizer, batch_size, T):
         y = y.transpose(0, 1)
         optimizer.zero_grad()
 
-        loss, accuracy, vals, _ = net.forward(x, y)
+        loss, accuracy, vals, hidden_states = net.forward(x, y)
         loss.backward()
+        if i % 50 == 0 or i == n_steps / 2 or i == n_steps - 1:
+            plt.clf()
+            plt.plot(range(len(hidden_states)),
+                     [torch.norm(i.grad) for i in hidden_states])
+            plt.savefig(os.path.join(SAVEDIR,
+                                     'denoise_dLdh_t_{}_{}.png'.format(NET_TYPE,
+                                                                    i)))
+
+        W_grads.append(torch.norm(net.rnn.V.weight.grad)/batch_size)
+
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         save_norms.append(norm)
         #writer.add_scalar('Grad Norms', norm, i)
@@ -216,6 +230,9 @@ def train_model(net, optimizer, batch_size, T):
             torch.save(net.state_dict(), './reldenoiselogs/' + args.name + '.pt')
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss.item(), accuracy))
+    plt.clf()
+    plt.plot(range(len(W_grads)), W_grads)
+    plt.savefig(os.path.join(SAVEDIR, 'denoise_dLdW_{}.png'.format(NET_TYPE)))
 
     '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
@@ -343,13 +360,13 @@ if args.onehot:
     udir = 'onehot/' + udir
 LOGDIR = './logs/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 SAVEDIR = './saves/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-'''
+
 if not os.path.exists(SAVEDIR):
     os.makedirs(SAVEDIR)
 with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
-'''
+
 if args.log:
     writer = SummaryWriter('./reldenoiselogs/' + args.name + '/')
 

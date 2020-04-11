@@ -146,6 +146,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
     losses = []
     lc = 0
     tx, ty = create_dataset(1, T, args.c_length)
+    W_grads = []
     if CUDA:
         tx = tx.cuda()
         ty = ty.cuda()
@@ -159,6 +160,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
             T = np.random.randint(1, args.T)
         x, y = create_dataset(batch_size, T, args.c_length)
 
+
         if CUDA:
             x = x.cuda()
             y = y.cuda()
@@ -169,6 +171,15 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         loss, accuracy, hidden_states, vals, _ = net.forward(x, y)
         loss_act = loss
         loss.backward()
+        if i % 50 == 0 or i == n_steps / 2 or i == n_steps - 1:
+            plt.clf()
+            plt.plot(range(len(hidden_states)),
+                     [torch.norm(i.grad) for i in hidden_states])
+            plt.savefig(os.path.join(SAVEDIR,
+                                     'copy_dLdh_t_{}_{}.png'.format(NET_TYPE,
+                                                                    i)))
+
+        W_grads.append(torch.norm(net.rnn.V.weight.grad))
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         #print(norm)
         save_norms.append(norm)
@@ -229,6 +240,10 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss_act.item(), accuracy))
+    plt.clf()
+    plt.plot(range(len(W_grads)), W_grads)
+    plt.savefig(os.path.join(SAVEDIR, 'copy_dLdW_{}.png'.format(NET_TYPE)))
+    plt.show()
     '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
         pickle.dump(losses, fp)
@@ -377,8 +392,8 @@ print('Cuda: {}'.format(CUDA))
 print(nonlin)
 print(hidden_size)
 
-#if not os.path.exists(SAVEDIR):
-#    os.makedirs(SAVEDIR)
+if not os.path.exists(SAVEDIR):
+    os.makedirs(SAVEDIR)
 if not args.adam:
     optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
 else:
