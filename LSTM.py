@@ -46,6 +46,8 @@ class LSTM(nn.Module):
         self.ot = ot
         self.ct = torch.mul(ft, self.ct) + torch.mul(it, gt)
         hidden = torch.mul(ot, self.tanh(self.ct))
+        #self.V = None
+        self.V = torch.stack([self.Wf.weight, self.Wi.weight, self.Wo.weight, self.Wg.weight])
         return hidden, (None, None), None
 
 class RelLSTM(nn.Module):
