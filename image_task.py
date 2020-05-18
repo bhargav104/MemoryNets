@@ -151,16 +151,16 @@ def save_checkpoint(state, fname):
     torch.save(state, filename)
 
 
-def train_model(net, optimizer, num_epochs):
+def train_model(net, start_epoch, optimizer, num_epochs):
     train_losses = []
     train_accuracies = []
     test_losses = []
     test_accuracies = []
     save_norms = []
-    best_test_acc = 0
+    global best_test_acc
     ta = 0
     chk = 1
-    for epoch in range(0, num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         s_t = time.time()
         accs = []
         losses = []
@@ -205,7 +205,7 @@ def train_model(net, optimizer, num_epochs):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             tl, ta = test_model(net, testloader)
-            torch.save(net.state_dict(), './relmnistlogs/' + args.name + '.pt')
+            torch.save(net.state_dict(), log_dir + 'best_model.pt')
 
 
         print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Test Loss: {} Test Accuracy {}'.format(
@@ -217,6 +217,10 @@ def train_model(net, optimizer, num_epochs):
             writer.add_scalar('Train acc', np.mean(accs), epoch)
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
+
+        status = {'start_epoch': epoch+1, 'best_val_acc': best_test_acc, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
+        torch.save(status, log_dir + 'status.pt')
+        print('model checkpoint saved')
 
         #tl, ta, vals = net.forward(tx, ty, order)
         #title = str(ty[0].item())
@@ -294,20 +298,30 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
 '''
-if args.log:
-    writer = SummaryWriter('./relmnistlogs/' + args.name + '/')
+
+log_dir = './imagelogs/' + args.dataset + '/' + args.name + '/'
+best_test_acc = 0
+try:
+	status = torch.load(log_dir + 'status.pt')
+	best_test_acc = status['best_val_acc']
+	print('resumed')
+	print('start epoch', status['start_epoch'], 'best val acc', status['best_val_acc'])
+except OSError:
+	if not os.path.isdir(log_dir):
+		os.makedirs(log_dir)
+	status = {'start_epoch': 0}
 
 if args.dataset == 'MNIST':
     T = 784
     inp_size = 1
     if args.log:
-        writer = SummaryWriter('./mnistlogs/' + args.name + '/')
+        writer = SummaryWriter(log_dir)
 elif args.dataset == 'CIFAR10':
     T = 32*32
     inp_size = 3
     if args.log:
-        writer = SummaryWriter('./cifar10logs/' + args.name + '/')
-rng = np.random.RandomState(1234)
+        writer = SummaryWriter(log_dir)
+rng = np.random.RandomState(100)
 if args.permute:
     order = rng.permutation(T)
 else:
@@ -318,6 +332,11 @@ out_size = 10
 
 rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
 net = Model(hid_size, rnn, T)
+
+if 'model_state' in status:
+	net.load_state_dict(status['model_state'])
+	print('model restored')
+
 if CUDA:
     net = net.cuda()
     net.rnn = net.rnn.cuda()
@@ -330,7 +349,13 @@ if args.adam:
 else:
     optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
 
+if 'optimizer_state' in status:
+	optimizer.load_state_dict(status['optimizer_state'])
+	print('optimizer restored')
+
+start_epoch = status['start_epoch']
+
 epoch = 0
 
 num_epochs = 200
-train_model(net, optimizer, num_epochs)
+train_model(net, start_epoch, optimizer, num_epochs)

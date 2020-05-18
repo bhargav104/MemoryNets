@@ -23,7 +23,7 @@ parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurr
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
-parser.add_argument('--permute', type=str2bool, default=False, help='permute the order of sMNIST')
+parser.add_argument('--permute', type=str2bool, default=True, help='permute the order of sMNIST')
 parser.add_argument('--nonlin', type=str, default='modrelu', help='non linearity none, relu, tanh, sigmoid')
 parser.add_argument('--lr', type=float, default=1e-4)
 parser.add_argument('--rinit', type=str, default="henaff", help='recurrent weight matrix initialization')
@@ -44,7 +44,7 @@ args = parser.parse_args()
 torch.cuda.manual_seed(args.random_seed)
 torch.manual_seed(args.random_seed)
 np.random.seed(args.random_seed)
-rng = np.random.RandomState(1234)
+rng = np.random.RandomState(100)
 if args.permute:
     order = rng.permutation(784)
 else:
@@ -136,16 +136,15 @@ def save_checkpoint(state, fname):
     torch.save(state, filename)
 
 
-def train_model(net, optimizer, num_epochs):
+def train_model(net, optimizer, start_epoch, num_epochs):
     train_losses = []
     train_accuracies = []
     test_losses = []
     test_accuracies = []
     save_norms = []
-    best_test_acc = 0
     ta = 0
     chk = 1
-    for epoch in range(0, num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         s_t = time.time()
         accs = []
         losses = []
@@ -153,7 +152,8 @@ def train_model(net, optimizer, num_epochs):
         processed = 0
         net.train()
         correct = 0
-
+        global best_test_acc
+        
         for i, data in enumerate(trainloader, 0):
             inp_x, inp_y = data
             inp_x = inp_x.view(-1, 784)
@@ -192,7 +192,7 @@ def train_model(net, optimizer, num_epochs):
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             tl, ta = test_model(net, testloader)
-            torch.save(net.state_dict(), './relmnistlogs/' + args.name + '.pt')
+            torch.save(net.state_dict(), model_dir + 'best_model.pt')
 
 
         print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Test Loss: {} Test Accuracy {}'.format(
@@ -205,6 +205,9 @@ def train_model(net, optimizer, num_epochs):
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
 
+        status = {'start_epoch': epoch+1, 'best_val_acc': best_test_acc, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
+        torch.save(status, model_dir + 'status.pt')
+        print('model checkpoint saved')
         #tl, ta, vals = net.forward(tx, ty, order)
         #title = str(ty[0].item())
         #mat = np.zeros((112, 112))
@@ -281,8 +284,15 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
 '''
-if args.log:
-    writer = SummaryWriter('./relmnistlogs/' + args.name + '/')
+best_test_acc = 0
+model_dir = './newImageLogs/' + args.name + '/'
+try:
+    status = torch.load(model_dir + 'status.pt')
+    best_test_acc = status['best_val_acc']
+except OSError:
+    if not os.path.isdir(model_dir):
+        os.makedirs(model_dir)
+    status = {'start_epoch': 0}
 
 T = 784
 batch_size = args.batch
@@ -290,6 +300,8 @@ out_size = 10
 
 rnn = select_network(NET_TYPE, inp_size, hid_size, nonlin, args.rinit, args.iinit, CUDA, args.lastk, args.rsize)
 net = Model(hid_size, rnn)
+if 'model_state' in status:
+    net.load_state_dict(status['model_state'])
 net.rnn.T = 784
 if CUDA:
     net = net.cuda()
@@ -303,7 +315,17 @@ if args.adam:
 else:
     optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha)
 
-epoch = 0
+if 'optimizer_state' in status:
+    optimizer.load_state_dict(status['optimizer_state'])
+
+if args.log:
+    writer = SummaryWriter(model_dir)
+
+start_epoch = status['start_epoch']
 
 num_epochs = 200
-train_model(net, optimizer, num_epochs)
+train_model(net, optimizer, start_epoch, num_epochs)
+
+'''
+python sMNISTtask.py --log --net-type=RelLSTM --k=1 --name=pm_rl0.0001lrk1
+'''

@@ -10,7 +10,7 @@ import os
 import pickle
 from datetime import datetime
 from tensorboardX import SummaryWriter
-
+from LSTM import LSTM, RelLSTM
 
 class Dictionary(object):
     def __init__(self):

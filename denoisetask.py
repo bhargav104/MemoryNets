@@ -39,7 +39,7 @@ parser.add_argument('--log', action='store_true', default=False, help='Use tenso
 parser.add_argument('--name', type=str, default='default', help='save name')
 parser.add_argument('--adam', action='store_true', default=False, help='Use adam')
 parser.add_argument('--load', action='store_true', default=False, help='load, dont train')
-parser.add_argument('--lastk', type=int, default=10, help='Size of short term bucket')
+parser.add_argument('--lastk', type=int, default=15, help='Size of short term bucket')
 parser.add_argument('--rsize', type=int, default=15, help='Size of long term bucket')
 parser.add_argument('--cutoff', type=float, default=0.0, help='Cutoff for long term bucket')
 parser.add_argument('--clip', type=float, default=1.0, help='Clip norms value')
@@ -206,14 +206,16 @@ def train_model(net, optimizer, batch_size, T):
             plt.savefig('heatmaps_denoise/' + name + '.png')
             plt.close(fig)
         '''
-        if args.log and len(accs) == 200:
+        if args.log and len(accs) == 10:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
+            v3 = sum(save_norms) / len(save_norms)
             writer.add_scalar('Loss', v2, lc)
             writer.add_scalar('Accuracy', v1, lc)
+            writer.add_scalar('dL/dw norm', v3, lc)
             lc += 1
-            accs, losses = [], []
-            torch.save(net.state_dict(), './reldenoiselogs/' + args.name + '.pt')
+            accs, losses, save_norms = [], [], []
+            torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss.item(), accuracy))
 
@@ -235,7 +237,7 @@ def train_model(net, optimizer, batch_size, T):
         '{}_{}.pth.tar'.format(NET_TYPE, i)
     )
     '''
-    torch.save(net.state_dict(), './reldenoiselogs/' + args.name + '.pt')
+    torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
     return
 
 
@@ -351,7 +353,7 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
         fp.write(('{}: {}'.format(key, val)))
 '''
 if args.log:
-    writer = SummaryWriter('./reldenoiselogs/' + args.name + '/')
+    writer = SummaryWriter('./denoiselogs/' + args.name + '/')
 
 torch.cuda.manual_seed(random_seed)
 torch.manual_seed(random_seed)

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import sys
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, cuda=True):
@@ -64,6 +64,7 @@ class RelLSTM(nn.Module):
         self.T = 0
         self.last_k = last_k
         self.rsize = rsize
+        self.app = 1
         self.Ua = nn.Linear(hidden_size, hidden_size, bias=False)
         self.Va = nn.Linear(hidden_size, hidden_size, bias=False)
         self.v = nn.Parameter(torch.Tensor(1,hidden_size))
@@ -168,9 +169,12 @@ class RelLSTM(nn.Module):
             
             self.long_mask = new_mask
 
-        self.memory.append(hidden)
-        if len(self.memory) > self.last_k:
-            del self.memory[0]
+        if self.app == 1:
+            self.memory.append(hidden)
+            if len(self.memory) > self.last_k:
+                del self.memory[0]
+        else:
+            self.tcnt -= 1
 
         if self.count == 0:
             self.count = 1

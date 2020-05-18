@@ -346,6 +346,8 @@ class RelMemRNN(nn.Module):
             self.memory.append(h)
             if len(self.memory) > self.last_k:
                 del self.memory[0]
+        else:
+            self.tcnt -= 1
         #print(h)
         if self.count == 0:
             self.count = 1
