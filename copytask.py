@@ -11,10 +11,12 @@ import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 import sys
-
+import wandb
 from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
 
+
+wandb.init(project="memnet")
 parser = argparse.ArgumentParser(description='auglang parameters')
 
 parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'], help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
@@ -113,6 +115,7 @@ class Model(nn.Module):
         self.rnn.app = 1
         rlist = []
         hlist = []
+        loss2 = 0
         for i in range(len(x)):
             #if i >= 11:
             #    self.rnn.app = 0
@@ -133,12 +136,13 @@ class Model(nn.Module):
                 preds = torch.argmax(out, dim=1)
                 actual = y[i].squeeze(1)
                 correct = preds == actual
-
+                loss2 += self.loss_func(out, y[i].squeeze(1))
                 accuracy += correct.sum().item()
             
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
-        return loss, accuracy, hiddens, va, None
+        loss2 /= (x.shape[0])
+        return loss, accuracy, hiddens, va, loss2
 
 def train_model(net, optimizer, batch_size, T, n_steps):
     save_norms = []
@@ -146,6 +150,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
     losses = []
     lc = 0
     tx, ty = create_dataset(1, T, args.c_length)
+    W_grads = []
     if CUDA:
         tx = tx.cuda()
         ty = ty.cuda()
@@ -159,6 +164,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
             T = np.random.randint(1, args.T)
         x, y = create_dataset(batch_size, T, args.c_length)
 
+
         if CUDA:
             x = x.cuda()
             y = y.cuda()
@@ -166,8 +172,29 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         y = y.transpose(0, 1)
 
         optimizer.zero_grad()
-        loss, accuracy, hidden_states, vals, _ = net.forward(x, y)
+        loss, accuracy, hidden_states, vals, loss2 = net.forward(x, y)
         loss_act = loss
+        loss2.backward(retain_graph=True)
+
+        if i % 500 == 0 or i == n_steps / 2 or i == n_steps - 1:
+            plt.clf()
+            plt.plot(range(len(hidden_states)),
+                     [torch.norm(i.grad) for i in hidden_states])
+            wandb.log({"dLdh_{}".format(i): plt})
+            plt.savefig(os.path.join(SAVEDIR,
+                                     'copy_dLdh_t_{}_{}.png'.format(NET_TYPE,
+                                                                    i)))
+
+            pickle.dump([torch.norm(i.grad).cpu().numpy() for i in hidden_states], 
+                    open(os.path.join(SAVEDIR,'copy_cldght_{}_{}_data.pickle'.format(NET_TYPE, i)), 'wb'))
+        if NET_TYPE != 'LSTM':
+            W_grads.append(torch.norm(net.rnn.V.weight.grad).cpu().numpy())
+            wandb.log({"W grads": torch.norm(net.rnn.V.weight.grad).cpu().numpy()})
+        else:
+            V = torch.cat([net.rnn.Wo.weight.grad, net.rnn.Wi.weight.grad, net.rnn.Wf.weight.grad, net.rnn.Wg.weight.grad])
+            W_grads.append(torch.norm(V).cpu().numpy())
+            wandb.log({"W grads": torch.norm(V).cpu().numpy()})
+        optimizer.zero_grad()
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         #print(norm)
@@ -229,6 +256,11 @@ def train_model(net, optimizer, batch_size, T, n_steps):
         
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss_act.item(), accuracy))
+    plt.clf()
+    plt.plot(range(len(W_grads)), W_grads)
+    plt.savefig(os.path.join(SAVEDIR, 'copy_dLdW_{}.png'.format(NET_TYPE)))
+    pickle.dump(W_grads,
+              open(os.path.join(SAVEDIR,'copy_dldW_{}_data.pickle'.format(NET_TYPE)), 'wb'))
     '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
         pickle.dump(losses, fp)
@@ -341,12 +373,12 @@ if args.onehot:
     udir = 'onehot/' + udir
 
 if not args.vari:
-    n_steps = 200000 #100000
+    n_steps = 20000 #100000
     LOGDIR = './logs/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-    SAVEDIR = './saves/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
+    SAVEDIR = './saves/copytask/gradtest/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     print(SAVEDIR)
 else:
-    n_steps = 200000
+    n_steps = 10000
     LOGDIR = './logs/varicopytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     SAVEDIR = './saves/varicopytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 
@@ -377,8 +409,8 @@ print('Cuda: {}'.format(CUDA))
 print(nonlin)
 print(hidden_size)
 
-#if not os.path.exists(SAVEDIR):
-#    os.makedirs(SAVEDIR)
+if not os.path.exists(SAVEDIR):
+    os.makedirs(SAVEDIR)
 if not args.adam:
     optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
 else:

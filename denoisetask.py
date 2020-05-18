@@ -18,7 +18,7 @@ import sys
 parser = argparse.ArgumentParser(description='auglang parameters')
 
 parser.add_argument('--net-type', type=str, default='RNN',
-                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
+                    #choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
                     help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -86,15 +86,19 @@ class Model(nn.Module):
         hidden = None
         outs = []
         loss = 0
+        loss2 =0
         accuracy = 0
         va = []
         rlist = []
+        hiddens = []
         for i in range(len(x)):
             if args.onehot:
                 inp = onehot(x[i])
             else:
                 inp = x[i]
             hidden, vals, rpos = self.rnn.forward(inp, hidden)
+            hidden.retain_grad()
+            hiddens.append(hidden)
             va.append(vals)
             if rpos is not None:
                 rlist.append(rpos)
@@ -104,16 +108,17 @@ class Model(nn.Module):
             if i >= T + args.c_length:
                 preds = torch.argmax(out, dim=1)
                 actual = y[i].squeeze(1)
-
+                loss2 += self.loss_func(out, y[i].squeeze(1))
                 correct = preds == actual
 
                 accuracy += correct.sum().item()
         accuracy /= (args.c_length * x.shape[1])
         loss /= (x.shape[0])
+        loss2 /= (x.shape[0])
 
         if len(rlist) > 0:
             rlist = torch.stack(rlist)
-        return loss, accuracy, va, rlist
+        return loss, accuracy, va, hiddens, loss2
 
     def loss(self, logits, y):
         print(logits.shape)
@@ -139,8 +144,9 @@ def train_model(net, optimizer, batch_size, T):
         ty = ty.cuda()
     tx = tx.transpose(0, 1)
     ty = ty.transpose(0, 1)
-
-    for i in range(200000):
+    n_steps = 20000
+    W_grads = []
+    for i in range(n_steps):
 
         s_t = time.time()
         if args.vari:
@@ -155,7 +161,29 @@ def train_model(net, optimizer, batch_size, T):
         y = y.transpose(0, 1)
         optimizer.zero_grad()
 
-        loss, accuracy, vals, _ = net.forward(x, y)
+        loss, accuracy, vals, hidden_states, loss2 = net.forward(x, y)
+        loss2.backward(retain_graph=True)
+        if i % 50 == 0 or i == n_steps / 2 or i == n_steps - 1:
+            plt.clf()
+            plt.plot(range(len(hidden_states)),
+                     [torch.norm(i.grad) for i in hidden_states])
+            plt.savefig(os.path.join(SAVEDIR,
+                                     'denoise_dLdh_t_{}_{}.png'.format(NET_TYPE,
+                                                                    i)))
+            pickle.dump(
+                    [torch.norm(i.grad) for i in hidden_states], 
+                    open(os.path.join(
+                        SAVEDIR, 
+                        'denoise_dLdh_t_{}_{}_data.pkl'.format(NET_TYPE,i)), 'wb')
+                    )
+
+        if NET_TYPE != 'LSTM':
+            W_grads.append(torch.norm(net.rnn.V.weight.grad)/batch_size)
+        else:
+            V = torch.stack([net.rnn.Wo.weight.grad,net.rnn.Wi.weight.grad, net.rnn.Wf.weight.grad, net.rnn.Wg.weight.grad])
+            W_grads.append(torch.norm(V)/batch_size)
+        print(W_grads[-1])
+        optimizer.zero_grad()
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
         save_norms.append(norm)
@@ -218,6 +246,12 @@ def train_model(net, optimizer, batch_size, T):
             torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss.item(), accuracy))
+    plt.clf()
+    plt.plot(range(len(W_grads)), W_grads)
+    plt.savefig(os.path.join(SAVEDIR, 'denoise_dLdW_{}.png'.format(NET_TYPE)))
+    pickle.dump(W_grads,
+            open(os.path.join(SAVEDIR,'denoise_dLdW_{}_data.pkl'.format(NET_TYPE)), 'wb'))
+
 
     '''
     with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
@@ -344,14 +378,14 @@ udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}'.format(args.nhid, no
 if args.onehot:
     udir = 'onehot/' + udir
 LOGDIR = './logs/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-SAVEDIR = './saves/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-'''
+SAVEDIR = './saves/denoisetask/gradtest/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
+
 if not os.path.exists(SAVEDIR):
     os.makedirs(SAVEDIR)
 with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
-'''
+
 if args.log:
     writer = SummaryWriter('./denoiselogs/' + args.name + '/')
 
