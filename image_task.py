@@ -202,8 +202,8 @@ def train_model(net, start_epoch, optimizer, num_epochs):
         test_loss, test_acc = test_model(net, valloader)
         test_accuracies.append(test_acc)
         test_losses.append(test_loss)
-        if test_acc > best_test_acc:
-            best_test_acc = test_acc
+        if test_loss > best_test_loss:
+            best_test_loss = test_loss
             tl, ta = test_model(net, testloader)
             torch.save(net.state_dict(), log_dir + 'best_model.pt')
 
@@ -218,7 +218,7 @@ def train_model(net, start_epoch, optimizer, num_epochs):
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
 
-        status = {'start_epoch': epoch+1, 'best_val_acc': best_test_acc, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
+        status = {'start_epoch': epoch+1, 'best_val_loss': best_test_loss, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
         torch.save(status, log_dir + 'status.pt')
         print('model checkpoint saved')
 
@@ -303,7 +303,7 @@ log_dir = './imagelogs/' + args.dataset + '/' + args.name + '/'
 best_test_acc = 0
 try:
 	status = torch.load(log_dir + 'status.pt')
-	best_test_acc = status['best_val_acc']
+	best_test_loss = status['best_val_loss']
 	print('resumed')
 	print('start epoch', status['start_epoch'], 'best val acc', status['best_val_acc'])
 except OSError:

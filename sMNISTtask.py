@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='auglang parameters')
      
 parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'], help='options: RNN, MemRNN')
-parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
+parser.add_argument('--nhid', type=int, default=100, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
@@ -189,8 +189,8 @@ def train_model(net, optimizer, start_epoch, num_epochs):
         test_loss, test_acc = test_model(net, valloader)
         test_accuracies.append(test_acc)
         test_losses.append(test_loss)
-        if test_acc > best_test_acc:
-            best_test_acc = test_acc
+        if test_loss > best_test_loss:
+            best_test_loss = test_loss
             tl, ta = test_model(net, testloader)
             torch.save(net.state_dict(), model_dir + 'best_model.pt')
 
@@ -205,7 +205,7 @@ def train_model(net, optimizer, start_epoch, num_epochs):
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
 
-        status = {'start_epoch': epoch+1, 'best_val_acc': best_test_acc, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
+        status = {'start_epoch': epoch+1, 'best_val_loss': best_test_loss, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
         torch.save(status, model_dir + 'status.pt')
         print('model checkpoint saved')
         #tl, ta, vals = net.forward(tx, ty, order)
@@ -288,7 +288,7 @@ best_test_acc = 0
 model_dir = './newImageLogs/' + args.name + '/'
 try:
     status = torch.load(model_dir + 'status.pt')
-    best_test_acc = status['best_val_acc']
+    best_test_loss = status['best_val_loss']
 except OSError:
     if not os.path.isdir(model_dir):
         os.makedirs(model_dir)
