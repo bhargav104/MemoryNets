@@ -165,7 +165,7 @@ def train_model(net, start_epoch, optimizer, num_epochs):
         accs = []
         losses = []
         norms = []
-        processed = 0
+        processed = 0	
         net.train()
         correct = 0
 
@@ -300,7 +300,7 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
 '''
 
 log_dir = './imagelogs/' + args.dataset + '/' + args.name + '/'
-best_test_acc = 0
+best_test_loss = 0
 try:
 	status = torch.load(log_dir + 'status.pt')
 	best_test_loss = status['best_val_loss']

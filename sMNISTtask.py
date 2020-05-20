@@ -284,7 +284,7 @@ with open(SAVEDIR + 'hparams.txt', 'w') as fp:
     for key, val in args.__dict__.items():
         fp.write(('{}: {}'.format(key, val)))
 '''
-best_test_acc = 0
+best_test_loss = 0
 model_dir = './newImageLogs/' + args.name + '/'
 try:
     status = torch.load(model_dir + 'status.pt')
