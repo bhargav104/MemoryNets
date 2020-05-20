@@ -152,7 +152,7 @@ def train_model(net, optimizer, start_epoch, num_epochs):
         processed = 0
         net.train()
         correct = 0
-        global best_test_acc
+        global best_test_loss
         
         for i, data in enumerate(trainloader, 0):
             inp_x, inp_y = data
