@@ -19,9 +19,9 @@ import matplotlib.pyplot as plt
 parser = argparse.ArgumentParser(description='auglang parameters')
      
 parser.add_argument('--net-type', type=str, default='RNN',
-                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM'],
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
                     help='options: RNN, MemRNN')
-parser.add_argument('--nhid', type=int, default=400, help='hidden size of recurrent net')
+parser.add_argument('--nhid', type=int, default=100, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
 parser.add_argument('--random-seed', type=int, default=400, help='random seed')
@@ -157,7 +157,7 @@ def train_model(net, start_epoch, optimizer, num_epochs):
     test_losses = []
     test_accuracies = []
     save_norms = []
-    global best_test_acc
+    global best_test_loss
     ta = 0
     chk = 1
     for epoch in range(start_epoch, num_epochs):
