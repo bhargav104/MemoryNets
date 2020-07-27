@@ -147,9 +147,9 @@ class MemRNN(nn.Module):
     def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
-            #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
             if hidden is None:
                 hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
+            # Initialize memory
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
@@ -157,14 +157,11 @@ class MemRNN(nn.Module):
         else:
             all_hs = torch.stack(self.memory)
             Uahs = self.Ua(all_hs)
-            #print(all_hs.size(), Uahs.size(),self.st.size())
-            #sys.exit(0)
 
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
             alphas = self.softmax(es)
             all_hs = torch.stack(self.memory,0)
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs), all_hs), dim=0)
-            #ct = torch.sum(alphas.unsqueeze(2) * all_hs, dim=0)
             self.st = 0.5 * (all_hs[-1] + ct * attn)
             h = self.U(x) + self.V(self.st)
 
@@ -173,9 +170,7 @@ class MemRNN(nn.Module):
         h.retain_grad()
         if self.app == 1:
             self.memory.append(h)
-        #    if len(self.memory) > 10:
-        #        del self.memory[0]
-        #print(h)
+        
         if self.count == 0:
             self.count = 1
             return h, (None, None), None
@@ -248,22 +243,22 @@ class RelMemRNN(nn.Module):
     def forward(self, x, hidden, attn=1.0, reset=False):
         if hidden is None or reset:
             self.count = 0
-            #hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=True)
             if hidden is None:
                 hidden = x.new_zeros(x.shape[0], self.hidden_size, requires_grad=False)
             self.tcnt = -1
             self.long_scores = torch.zeros(self.T, x.shape[0], requires_grad=False).cuda()
             self.long_ctrs = torch.zeros(x.shape[0], requires_grad=False).cuda()
             self.long_mask = float('-inf') * torch.ones(self.rsize, x.shape[0], requires_grad=False).cuda()
-            #self.long_mem = torch.zeros(self.rsize, x.shape[0], self.hidden_size, requires_grad=False).cuda()
             self.long_mem = [[] for i in range(x.shape[0])]
             self.long_ids = torch.ones(x.shape[0], self.rsize) * -1.0
             self.buck_scores = torch.zeros(x.shape[0], self.rsize)
+            # Initialize short-term memory
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
 
         else:
+            # Create the Relevant set.
             lm_list = []
             for i in range(self.rsize):
                 temp_l = []
@@ -278,26 +273,19 @@ class RelMemRNN(nn.Module):
             all_hs = torch.stack(self.memory)
             Uahs = self.Ua(all_hs)
             long_uas = self.Ua(long_h)
-            #print(Uahs.size(), long_uas.size())
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
             es_long = torch.matmul(self.tanh(self.Va(self.st).expand_as(long_uas) + long_uas), self.v.unsqueeze(2)).squeeze(2)
-            #print(es.size(), es_long.size())
             es_long = es_long + self.long_mask
             es_comb = torch.cat((es, es_long), dim=0)
             alphas = self.softmax(es_comb)
-            #print(alphas)
-            #time.sleep(0.5  )
+
             det_a = alphas.detach()
             lv = max(0, self.tcnt - self.last_k + 1)
+            # keep track of attention scores to see if it can transfer to relevant set
             self.long_scores[lv:(self.tcnt+1), :] += det_a[:-self.rsize, :]
-            #print(lv, self.tcnt+1)
-            #print(self.long_scores)
-            #time.sleep(1.0)
-            #all_hs = torch.stack(self.memory, 0)
             comb_hs = torch.cat((all_hs, long_h), dim=0)
 
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(comb_hs), comb_hs), dim=0)
-            #ct = torch.sum(alphas.unsqueeze(2) * all_hs, dim=0)
             self.st = 0.5 * (comb_hs[-1-self.rsize] + ct * attn)
             h = self.U(x) + self.V(self.st)
 
@@ -307,23 +295,15 @@ class RelMemRNN(nn.Module):
         self.tcnt += 1
         ret_pos = torch.zeros(x.shape[0], self.rsize)
         ret_pos.copy_(self.long_ids)
-        #print(self.long_ids)
+        # Decide if time step leaving short-term memory should transfer to relevant set.
         if self.tcnt >= self.last_k:
-            '''
-            new_mask = torch.zeros(self.rsize, x.shape[0], requires_grad=False).cuda()
-            new_mask.copy_(self.long_mask)
-            for i in range(x.shape[0]):
-                if len(self.long_mem[i]) < self.rsize and self.long_scores[self.tcnt-self.last_k][i] >= self.cutoff:
-                    new_mask[len(self.long_mem[i])][i] = 0.0
-                    self.long_mem[i].append(self.memory[0][i])
-            self.long_mask = new_mask
-            '''
             new_mask = torch.zeros(self.rsize, x.shape[0], requires_grad=False).cuda()
             new_mask.copy_(self.long_mask)
             minp = torch.argmin(self.buck_scores, dim=1)
             for i in range(x.shape[0]):
                 addpos = -1
                 
+                # if space is there is relevant set add it
                 if len(self.long_mem[i]) < self.rsize:
                     addpos = len(self.long_mem[i])
                     self.long_mem[i].append(self.memory[0][i])
@@ -331,6 +311,7 @@ class RelMemRNN(nn.Module):
                     self.buck_scores[i][addpos] = self.long_scores[self.tcnt-self.last_k][i]
                     self.long_ids[i][addpos] = self.tcnt - self.last_k
                 
+                # if relevant set is full, check and see if you can replace the time step with lowest relevance score
                 elif self.long_scores[self.tcnt-self.last_k][i].item() > self.buck_scores[i][minp[i].item()].item():
                     addpos = minp[i].item()
                     self.long_mem[i][addpos] = self.memory[0][i]
@@ -340,7 +321,6 @@ class RelMemRNN(nn.Module):
                     self.long_ids[i][addpos] = self.tcnt - self.last_k
             
             self.long_mask = new_mask
-            #print(self.long_ctrs)
 
         if self.app == 1:
             self.memory.append(h)
@@ -348,7 +328,7 @@ class RelMemRNN(nn.Module):
                 del self.memory[0]
         else:
             self.tcnt -= 1
-        #print(h)
+            
         if self.count == 0:
             self.count = 1
             return h, (None, None), None
