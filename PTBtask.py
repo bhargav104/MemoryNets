@@ -374,9 +374,3 @@ writer.add_scalar('Valid BPC', test_loss / math.log(2), args.epochs)
 with open(SAVEDIR + 'testdat.txt', 'w') as fp:
     fp.write('Test loss: {} Test Accuracy: {}'.format(test_loss, test_accuracy))
 
-
-# --log --cuda --nonlin=tanh --adam --name=rel150adam0.0001tanh --save=name....1.54, 67%
-
-'''
-LSTM - rms 0.001 1.43 and 0.70 acc
-'''

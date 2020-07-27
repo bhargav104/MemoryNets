@@ -63,6 +63,7 @@ class RelLSTM(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax(dim=0)
+        # Assign T after creating an instance of RelLSTM
         self.T = 0
         self.last_k = last_k
         self.rsize = rsize
@@ -99,10 +100,12 @@ class RelLSTM(nn.Module):
             self.long_mem = [[] for i in range(x.shape[0])]
             self.long_ids = torch.ones(x.shape[0], self.rsize) * -1.0
             self.buck_scores = torch.zeros(x.shape[0], self.rsize)
+            # Initialize short-term memory
             self.memory = []
             self.st = hidden
 
         else:
+            # Create the Relevant set.
             lm_list = []
             for i in range(self.rsize):
                 temp_l = []
@@ -126,6 +129,7 @@ class RelLSTM(nn.Module):
 
             det_a = alphas.detach()
             lv = max(0, self.tcnt - self.last_k + 1)
+            # keep track of attention scores to see if it can transfer to relevant set
             self.long_scores[lv:(self.tcnt+1), :] += det_a[:-self.rsize, :]
             comb_hs = torch.cat((all_hs, long_h), dim=0)
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(comb_hs), comb_hs), dim=0)
@@ -147,6 +151,7 @@ class RelLSTM(nn.Module):
         ret_pos = torch.zeros(x.shape[0], self.rsize)
         ret_pos.copy_(self.long_ids)
 
+        # Decide if time step leaving short-term memory should transfer to relevant set.
         if self.tcnt >= self.last_k:
             new_mask = torch.zeros(self.rsize, x.shape[0], requires_grad=False).cuda()
             new_mask.copy_(self.long_mask)
@@ -154,13 +159,14 @@ class RelLSTM(nn.Module):
             for i in range(x.shape[0]):
                 addpos = -1
                 
+                # if space is there is relevant set add it
                 if len(self.long_mem[i]) < self.rsize:
                     addpos = len(self.long_mem[i])
                     self.long_mem[i].append(self.memory[0][i])
                     new_mask[addpos][i] = 0.0
                     self.buck_scores[i][addpos] = self.long_scores[self.tcnt-self.last_k][i]
                     self.long_ids[i][addpos] = self.tcnt - self.last_k
-                
+                # if relevant set is full, check and see if you can replace the time step with lowest relevance score
                 elif self.long_scores[self.tcnt-self.last_k][i].item() > self.buck_scores[i][minp[i].item()].item():
                     addpos = minp[i].item()
                     self.long_mem[i][addpos] = self.memory[0][i]

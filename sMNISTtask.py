@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
      
-parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'], help='options: RNN, MemRNN')
+parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN'], help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=100, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -50,9 +50,6 @@ if args.permute:
 else:
     order = np.arange(784)
 
-#trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-#valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-#offset = 10000
 trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
 testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
 
@@ -63,15 +60,6 @@ valid_sampler = torch.utils.data.sampler.SubsetRandomSampler(range(50000, 60000)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=train_sampler, num_workers=2)
 valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler, num_workers=2)
 testloader = torch.utils.data.DataLoader(testset, batch_size=100, num_workers=2)
-'''
-lengths = (len(trainset) - offset, offset)
-trainset, valset = [Subset(trainset, R[offset - length:offset]) for offset, length in
-                    zip(_accumulate(lengths), lengths)]
-testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch, shuffle=False, num_workers=2)
-valloader = torch.utils.data.DataLoader(valset, batch_size=args.batch, shuffle=False, num_workers=2)
-testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch, num_workers=2)
-'''
 
 class Model(nn.Module):
     def __init__(self, hidden_size, rnn):
@@ -81,7 +69,6 @@ class Model(nn.Module):
         self.hidden_size = hidden_size
         self.lin = nn.Linear(hidden_size, 10)
         self.loss_func = nn.CrossEntropyLoss()
-        #self.params = rnn.params() + [self.lin.weight, self.lin.bias]
 
     def forward(self, inputs, y, order):
         h = None
@@ -90,10 +77,8 @@ class Model(nn.Module):
         inputs = inputs[:, order]
         ctr = 0
         va = []
-        #for input in torch.unbind(inputs, dim=1):
         for i in range(784):
             inp = inputs[:, i].unsqueeze(1)
-            #inp = inputs[:,7*i:7*(i+1)]
             if ctr % args.k == 0:
                 self.rnn.app = 1
             else:
@@ -173,7 +158,6 @@ def train_model(net, optimizer, start_epoch, num_epochs):
             loss, c, _ = net.forward(inp_x, inp_y, order)
             correct += c
             processed += inp_x.shape[0]
-            #print(loss.item())
 
             accs.append(correct / float(processed))
 
@@ -208,53 +192,7 @@ def train_model(net, optimizer, start_epoch, num_epochs):
         status = {'start_epoch': epoch+1, 'best_val_loss': best_test_loss, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
         torch.save(status, model_dir + 'status.pt')
         print('model checkpoint saved')
-        #tl, ta, vals = net.forward(tx, ty, order)
-        #title = str(ty[0].item())
-        #mat = np.zeros((112, 112))
-        #for j in range(112):
-        #    if vals[j][0] is None:
-        #        continue
-        #    #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
-        #    for k in range(vals[j][1].size(0)):
-        #        mat[j][k] = vals[j][0][k][0]
-        #fig, ax = plt.subplots(figsize=(15,10))
-        #ax = sns.heatmap(mat, cmap='Greys')
-        #ax.set_title(title)
-        #name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
-        #plt.savefig('heatmaps_mnist/' + name + '.png')
-        #plt.close(fig)
-        # save data
-        '''
-        if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:
-            with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(train_losses, fp)
 
-            with open(SAVEDIR + '{}_Test_Losses'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(test_losses, fp)
-
-            with open(SAVEDIR + '{}_Test_Accuracy'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(test_accuracies, fp)
-
-            with open(SAVEDIR + '{}_Train_Accuracy'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(train_accuracies, fp)
-            with open(SAVEDIR + '{}_Grad_Norms'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(save_norms, fp)
-
-            save_checkpoint({
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch
-            },
-                '{}_{}.pth.tar'.format(NET_TYPE, epoch)
-            )
-        '''
-    '''
-    best_state = torch.load(os.path.join(SAVEDIR, 'best_model.pth.tar'))
-    net.load_state_dict(best_state['state_dict'])
-    test_loss, test_acc = test_model(net, testloader)
-    with open(os.path.join(SAVEDIR, 'log_test.txt'), 'w') as fp:
-        fp.write('Test loss: {} Test accuracy: {}'.format(test_loss, test_acc))
-    '''
     return
 
 
@@ -264,7 +202,7 @@ NET_TYPE = args.net_type
 CUDA = args.cuda
 SAVEFREQ = args.save_freq
 inp_size = 1
-hid_size = args.nhid  # calc_hidden_size(NET_TYPE,165000,1,10)
+hid_size = args.nhid 
 nonlins = ['relu', 'tanh', 'sigmoid', 'modrelu']
 nonlin = args.nonlin.lower()
 print(nonlin)
@@ -276,14 +214,6 @@ udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}_alpha_{}'.format(hid_
                                                                             args.rinit, args.iinit, decay, args.alpha)
 LOGDIR = './logs/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 SAVEDIR = './saves/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-'''
-if not os.path.exists(SAVEDIR):
-    os.makedirs(SAVEDIR)
-
-with open(SAVEDIR + 'hparams.txt', 'w') as fp:
-    for key, val in args.__dict__.items():
-        fp.write(('{}: {}'.format(key, val)))
-'''
 best_test_loss = 0
 model_dir = './newImageLogs/' + args.name + '/'
 try:
@@ -325,7 +255,3 @@ start_epoch = status['start_epoch']
 
 num_epochs = 200
 train_model(net, optimizer, start_epoch, num_epochs)
-
-'''
-python sMNISTtask.py --log --net-type=RelLSTM --k=1 --name=pm_rl0.0001lrk1
-'''

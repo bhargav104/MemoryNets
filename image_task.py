@@ -13,13 +13,12 @@ from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
 from torch._utils import _accumulate
 from torch.utils.data import Subset
-#import seaborn as sns
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='auglang parameters')
      
 parser.add_argument('--net-type', type=str, default='RNN',
-                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
+                    choices=['RNN', 'MemRNN', 'RelMemRNN', 'RelLSTM'],
                     help='options: RNN, MemRNN')
 parser.add_argument('--nhid', type=int, default=100, help='hidden size of recurrent net')
 parser.add_argument('--save-freq', type=int, default=50, help='frequency to save data')
@@ -50,9 +49,6 @@ torch.manual_seed(args.random_seed)
 np.random.seed(args.random_seed)
 
 
-#trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-#valset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
-#offset = 10000
 if args.dataset == 'MNIST':
     trainset = T.datasets.MNIST(root='./MNIST', train=True, download=True, transform=T.transforms.ToTensor())
     testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
@@ -67,7 +63,7 @@ elif args.dataset == 'CIFAR10':
                 )
     trainset = T.datasets.CIFAR10(root='./CIFAR10', train=True, download=True, transform=transform)
     testset = T.datasets.CIFAR10(root='./CIFAR10', train=False, download=True, transform=transform)
-    rng = np.random.RandomState(1234)
+    rng = np.random.RandomState(100)
     R = rng.permutation(len(trainset))
 
     train_sampler = torch.utils.data.sampler.SubsetRandomSampler(R[:40000])
@@ -80,15 +76,6 @@ trainloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=Fals
 valloader = torch.utils.data.DataLoader(trainset, batch_size=100, shuffle=False, sampler=valid_sampler,
                                         num_workers=2)
 testloader = torch.utils.data.DataLoader(testset, batch_size=100, num_workers=2)
-'''
-lengths = (len(trainset) - offset, offset)
-trainset, valset = [Subset(trainset, R[offset - length:offset]) for offset, length in
-                    zip(_accumulate(lengths), lengths)]
-testset = T.datasets.MNIST(root='./MNIST', train=False, download=True, transform=T.transforms.ToTensor())
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch, shuffle=False, num_workers=2)
-valloader = torch.utils.data.DataLoader(valset, batch_size=args.batch, shuffle=False, num_workers=2)
-testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch, num_workers=2)
-'''
 
 class Model(nn.Module):
     def __init__(self, hidden_size, rnn, im_size):
@@ -108,7 +95,6 @@ class Model(nn.Module):
         va = []
         for i in range(self.rnn.T):
             inp = inputs[:,:, i]
-            #inp = inputs[:,7*i:7*(i+1)]
             if ctr % args.k == 0:
                 self.rnn.app = 1
             else:
@@ -157,7 +143,7 @@ def train_model(net, start_epoch, optimizer, num_epochs):
     test_losses = []
     test_accuracies = []
     save_norms = []
-    global best_test_loss
+    global best_test_acc
     ta = 0
     chk = 1
     for epoch in range(start_epoch, num_epochs):
@@ -191,7 +177,6 @@ def train_model(net, start_epoch, optimizer, num_epochs):
             accs.append(correct / float(processed))
 
             loss.backward()
-            #print(i, loss.item())
             losses.append(loss.item())
 
             optimizer.step()
@@ -202,14 +187,14 @@ def train_model(net, start_epoch, optimizer, num_epochs):
         test_loss, test_acc = test_model(net, valloader)
         test_accuracies.append(test_acc)
         test_losses.append(test_loss)
-        if test_loss > best_test_loss:
-            best_test_loss = test_loss
+        if test_acc > best_test_acc:
+            best_test_acc = test_acc
             tl, ta = test_model(net, testloader)
             torch.save(net.state_dict(), log_dir + 'best_model.pt')
 
 
-        print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Test Loss: {} Test Accuracy {}'.format(
-            epoch + 1, time.time() - s_t, np.mean(losses), np.mean(accs), test_loss, test_acc))
+        print('Epoch {}, Time for Epoch: {}, Train Loss: {}, Train Accuracy: {} Valid Loss: {} Valid Accuracy {} Test Acc {}'.format(
+            epoch + 1, time.time() - s_t, np.mean(losses), np.mean(accs), test_loss, test_acc, ta))
         train_losses.append(np.mean(losses))
         train_accuracies.append(np.mean(accs))
         save_norms.append(np.mean(norms))
@@ -218,57 +203,10 @@ def train_model(net, start_epoch, optimizer, num_epochs):
             writer.add_scalar('Valid acc', test_acc, epoch)
             writer.add_scalar('Test acc', ta, epoch)
 
-        status = {'start_epoch': epoch+1, 'best_val_loss': best_test_loss, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
+        status = {'start_epoch': epoch+1, 'best_val_acc': best_test_acc, 'model_state': net.state_dict(), 'optimizer_state': optimizer.state_dict()}
         torch.save(status, log_dir + 'status.pt')
         print('model checkpoint saved')
 
-        #tl, ta, vals = net.forward(tx, ty, order)
-        #title = str(ty[0].item())
-        #mat = np.zeros((112, 112))
-        #for j in range(112):
-        #    if vals[j][0] is None:
-        #        continue
-        #    #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
-        #    for k in range(vals[j][1].size(0)):
-        #        mat[j][k] = vals[j][0][k][0]
-        #fig, ax = plt.subplots(figsize=(15,10))
-        #ax = sns.heatmap(mat, cmap='Greys')
-        #ax.set_title(title)
-        #name = 'step_' + str(epoch) + '_acc_' + str(test_acc)
-        #plt.savefig('heatmaps_mnist/' + name + '.png')
-        #plt.close(fig)
-        # save data
-        '''
-        if epoch % SAVEFREQ == 0 or epoch == num_epochs - 1:
-            with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(train_losses, fp)
-
-            with open(SAVEDIR + '{}_Test_Losses'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(test_losses, fp)
-
-            with open(SAVEDIR + '{}_Test_Accuracy'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(test_accuracies, fp)
-
-            with open(SAVEDIR + '{}_Train_Accuracy'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(train_accuracies, fp)
-            with open(SAVEDIR + '{}_Grad_Norms'.format(NET_TYPE), 'wb') as fp:
-                pickle.dump(save_norms, fp)
-
-            save_checkpoint({
-                'state_dict': net.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'epoch': epoch
-            },
-                '{}_{}.pth.tar'.format(NET_TYPE, epoch)
-            )
-        '''
-    '''
-    best_state = torch.load(os.path.join(SAVEDIR, 'best_model.pth.tar'))
-    net.load_state_dict(best_state['state_dict'])
-    test_loss, test_acc = test_model(net, testloader)
-    with open(os.path.join(SAVEDIR, 'log_test.txt'), 'w') as fp:
-        fp.write('Test loss: {} Test accuracy: {}'.format(test_loss, test_acc))
-    '''
     return
 
 
@@ -290,26 +228,19 @@ udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}_alpha_{}'.format(hid_
                                                                             args.rinit, args.iinit, decay, args.alpha)
 LOGDIR = './logs/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
 SAVEDIR = './saves/sMNIST/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-'''
-if not os.path.exists(SAVEDIR):
-    os.makedirs(SAVEDIR)
-
-with open(SAVEDIR + 'hparams.txt', 'w') as fp:
-    for key, val in args.__dict__.items():
-        fp.write(('{}: {}'.format(key, val)))
-'''
 
 log_dir = './imagelogs/' + args.dataset + '/' + args.name + '/'
-best_test_loss = 0
+best_test_acc = 0
 try:
 	status = torch.load(log_dir + 'status.pt')
-	best_test_loss = status['best_val_loss']
 	print('resumed')
-	print('start epoch', status['start_epoch'], 'best val acc', status['best_val_acc'])
 except OSError:
 	if not os.path.isdir(log_dir):
 		os.makedirs(log_dir)
 	status = {'start_epoch': 0}
+
+if 'best_val_acc' in status:
+    best_test_acc = status['best_val_acc']
 
 if args.dataset == 'MNIST':
     T = 784

@@ -105,7 +105,6 @@ def test_model(model, loader, criterion, order):
 			test_x, test_y = test_x.to(device), test_y.to(device)
 			test_x.transpose_(0, 1)
 			h = None
-			#c = torch.zeros(batch_size, hid_size).to(device)
 			model.lstm.app = 0
 			time_c = 0
 			for j in order:
@@ -149,7 +148,6 @@ def get_flat_params(model):
 def train_model(model, start_epoch, epochs, criterion, optimizer):
 
 	global best_acc
-	#best_acc = 0.0
 	ctr = 0	
 	global lr
 	if args.permute:
@@ -164,21 +162,14 @@ def train_model(model, start_epoch, epochs, criterion, optimizer):
 	old_grads = None
 	test_acc = 0
 	for epoch in range(start_epoch, epochs):
-		#print('epoch ' + str(epoch + 1))
 		epoch_loss = 0
 
-		'''
-		if epoch % update_fq == update_fq - 1 and args.sgd:
-			lr = lr / 2.0
-			optimizer.lr = lr
-		'''
 		for z, data in enumerate(trainloader, 0):
 			inp_x, inp_y = data
 			inp_x = inp_x.view(-1, 28*28, 1)
 			inp_x, inp_y = inp_x.to(device), inp_y.to(device)
 			inp_x.transpose_(0, 1)
 			h = None
-			#c = torch.zeros(batch_size, hid_size).to(device)
 			sq_len = T
 			loss = 0
 			zone = 0.15
@@ -190,12 +181,6 @@ def train_model(model, start_epoch, epochs, criterion, optimizer):
 				else:
 					model.lstm.app = 0
 				time_c += 1
-				'''
-				if args.p_detach != 1.0 and not args.full:
-					val = np.random.random(size=1)[0]
-					if val <= args.p_detach:
-						h = h.detach()
-				'''
 				output, h = model(inp_x[i], h)
 
 			loss += criterion(output, inp_y)
@@ -206,7 +191,6 @@ def train_model(model, start_epoch, epochs, criterion, optimizer):
 			
 			optimizer.step()
 			loss_val = loss.item()
-			#print(z, loss_val)
 			writer.add_scalar('/MNIST', loss_val, ctr)
 			ctr += 1
 
@@ -228,8 +212,6 @@ net = Net(inp_size, hid_size, out_size, args.algo, args.lastk, args.rsize).to(de
 if 'model_state' in status:
 	net.load_state_dict(status['model_state'])
 	print('model restored')
-#init_param = get_flat_params(net)
-#net_1 = Net(inp_size, hid_size, out_size).to(device)
 criterion = nn.CrossEntropyLoss()
 if not args.adam:
 	optimizer = optim.RMSprop(net.parameters(), lr=lr, alpha=0.99)
@@ -244,10 +226,3 @@ start_epoch = status['start_epoch']
 
 train_model(net, start_epoch, n_epochs, criterion, optimizer)
 writer.close()
-
-'''
-MNISTstoch - full, p-detach = 0.9, 0.75, 0.5, 0.25, 0.1, no forget - full, trunc 20, p-detach = 0.05, 0.01, 0.4
-pMNIST - same as above
-
-python pixelmnist.py --full --permute --lr=0.001 --k=20 --algo=RelLSTM --save-dir=pm_rl_0.001lr_20k_rms
-'''

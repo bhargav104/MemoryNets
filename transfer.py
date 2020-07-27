@@ -86,7 +86,6 @@ def create_dataset(size, T, c_length=10):
 
 
 def onehot(inp):
-    # print(inp.shape)
     onehot_x = inp.new_zeros(inp.shape[0], args.labels + 2)
     return onehot_x.scatter_(1, inp.long(), 1)
 
@@ -113,8 +112,6 @@ class Model(nn.Module):
         self.rnn.app = 1
         rlist = []
         for i in range(len(x)):
-            #if i >= 11:
-            #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
                 hidden, vals, rpos = self.rnn.forward(inp, hidden, attn)
