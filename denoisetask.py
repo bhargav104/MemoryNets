@@ -18,7 +18,6 @@ import sys
 parser = argparse.ArgumentParser(description='auglang parameters')
 
 parser.add_argument('--net-type', type=str, default='RNN',
-                    #choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'],
                     help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
 parser.add_argument('--nhid', type=int, default=128, help='hidden size of recurrent net')
 parser.add_argument('--cuda', type=str2bool, default=True, help='use cuda')
@@ -48,7 +47,6 @@ args = parser.parse_args()
 
 
 def onehot(inp):
-    # print(inp.shape)
     onehot_x = inp.new_zeros(inp.shape[0], args.labels + 2)
     return onehot_x.scatter_(1, inp.long(), 1)
 
@@ -144,7 +142,7 @@ def train_model(net, optimizer, batch_size, T):
         ty = ty.cuda()
     tx = tx.transpose(0, 1)
     ty = ty.transpose(0, 1)
-    n_steps = 20000
+    n_steps = 200000
     W_grads = []
     for i in range(n_steps):
 
@@ -177,12 +175,6 @@ def train_model(net, optimizer, batch_size, T):
                         'denoise_dLdh_t_{}_{}_data.pkl'.format(NET_TYPE,i)), 'wb')
                     )
 
-        if NET_TYPE != 'LSTM':
-            W_grads.append(torch.norm(net.rnn.V.weight.grad)/batch_size)
-        else:
-            V = torch.stack([net.rnn.Wo.weight.grad,net.rnn.Wi.weight.grad, net.rnn.Wf.weight.grad, net.rnn.Wg.weight.grad])
-            W_grads.append(torch.norm(V)/batch_size)
-        print(W_grads[-1])
         optimizer.zero_grad()
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
@@ -195,45 +187,7 @@ def train_model(net, optimizer, batch_size, T):
 
         optimizer.step()
         accs.append(accuracy)
-        '''
-        if i % 250 == 0:
-            tl, ta, vals, rrs = net.forward(tx, ty)
-            hist = net.rnn.long_scores.squeeze(1).detach().cpu().numpy()
-            fig, ax = plt.subplots()
-            plt.bar(np.arange(120), hist)
-            av = []
-            title = ''
-            for j in range(120):
-                if xx[j].item() != 0 and xx[j].item() != 10:
-                    av.append(j)
-                    title = title + str(j) + ' '
-            mat = np.zeros((120, 120))
-            for j in range(120):
-                if vals[j][0] is None:
-                    continue
-                #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
-                for k in range(vals[j][1].size(0)):
-                    #mat[j][k] = vals[j][1][k][0]
-                    adv = 0
-                    if j > 10:
-                        adv = j - 10
-                    mat[j][k+adv] = vals[j][1][k][0]
-                    adv = 0
-                    if j > args.lastk:
-                        adv = j - args.lastk
-                    if k < args.lastk:
-                        #print(j, k+adv, vals[j][1][k][0])
-                        #time.sleep(0.1)
-                        mat[j][k+adv] = vals[j][1][k][0]
-                    elif rrs[j][0][k-args.lastk].item() != -1.0:
-                        mat[j][int(rrs[j][0][k-args.lastk].item())] = vals[j][1][k][0]
-            fig, ax = plt.subplots(figsize=(15,10))
-            ax = sns.heatmap(mat, cmap='Greys')
-            ax.set_title(title)
-            name = 'step_' + str(i)  + '_acc_' + str(ta) +'_norm_' + str(norm)  
-            plt.savefig('heatmaps_denoise/' + name + '.png')
-            plt.close(fig)
-        '''
+
         if args.log and len(accs) == 10:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
@@ -253,24 +207,6 @@ def train_model(net, optimizer, batch_size, T):
             open(os.path.join(SAVEDIR,'denoise_dLdW_{}_data.pkl'.format(NET_TYPE)), 'wb'))
 
 
-    '''
-    with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(losses, fp)
-
-    with open(SAVEDIR + '{}_Train_Accuracy'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(accs, fp)
-
-    with open(SAVEDIR + '{}_Grad_Norms'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(save_norms, fp)
-
-    save_checkpoint({
-        'state_dict': net.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'train_step': i
-    },
-        '{}_{}.pth.tar'.format(NET_TYPE, i)
-    )
-    '''
     torch.save(net.state_dict(), './denoiselogs/' + args.name + '.pt')
     return
 
@@ -299,7 +235,6 @@ def load_function():
     
     net.load_state_dict(torch.load('denoiselogs/' + args.name + '.pt'))
     x, y = create_dataset(1, T, args.c_length)
-    #print(x.squeeze(2).squeeze(0))
     xx = x.squeeze(2).squeeze(0)
     if CUDA:
         x = x.cuda()
@@ -311,26 +246,11 @@ def load_function():
     for i in range(11):
         a1.append([])
     _, acc,  vals = net.forward(x, y)
-    #print(acc)
-    #sys.exit(0)
     av = [0]
     for i in range(120):
         if xx[i].item() != 0 and xx[i].item() != 10:
             av.append(i)
-    '''
-    deltas = []
-    for i in range(1, 120):
-        diff = net.rnn.memory[i] - net.rnn.memory[i-1]
-        val = torch.sum(diff ** 2).item()
-        deltas.append(val)
-    plt.plot(range(1, 120), deltas)
-    plt.scatter(np.array(av)[1:], np.zeros(10), c='orange')
-    plt.title('Change in hidden state Denoise task')
-    plt.xlabel('t')
-    plt.ylabel('delta h')
-    plt.savefig('denoiselogs/delta.png')
-    sys.exit(0)
-    '''
+
     ctr = 1
 
     for (a, b) in vals:
@@ -338,23 +258,18 @@ def load_function():
             continue
         
         mv = torch.argmax(a.squeeze(1)).item()
-        #print(ctr, mv, xx[mv].item())
         ctr += 1
         for i in range(11):
             if a.size(0) > av[i]:
                 a1[i].append(b[av[i]][0].item())
-        #a2.append(b[9][0].item())
 
     clrs = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'brown', 'pink', 'orange', 'purple']
-    #legs = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
     legs = []
     for i in range(11):
         legs.append(str(av[i]))
     for i in range(11):
         plt.plot(range(av[i]+1, 120), a1[i], clrs[i], label=legs[i])
     plt.legend()
-    #plt.plot(a1)
-    #plt.plot(a2)
     plt.savefig('fig.png')
 
 
@@ -378,7 +293,7 @@ udir = 'HS_{}_NL_{}_lr_{}_BS_{}_rinit_{}_iinit_{}_decay_{}'.format(args.nhid, no
 if args.onehot:
     udir = 'onehot/' + udir
 LOGDIR = './logs/denoisetask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
-SAVEDIR = './saves/denoisetask/gradtest/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
+SAVEDIR = './saves/denoisetask/gradtest/{}/{}/{}/{}'.format(NET_TYPE, udir, random_seed, args.name)
 
 if not os.path.exists(SAVEDIR):
     os.makedirs(SAVEDIR)

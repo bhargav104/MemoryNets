@@ -11,12 +11,9 @@ import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 import sys
-import wandb
 from common import henaff_init, cayley_init, random_orthogonal_init
 from utils import str2bool, select_network
 
-
-wandb.init(project="memnet")
 parser = argparse.ArgumentParser(description='auglang parameters')
 
 parser.add_argument('--net-type', type=str, default='RNN', choices=['RNN', 'MemRNN', 'RelMemRNN', 'LSTM', 'RelLSTM'], help='options: RNN, MemRNN, RelMemRNN, LSTM, RelLSTM')
@@ -88,7 +85,6 @@ def create_dataset(size, T, c_length=10):
 
 
 def onehot(inp):
-    # print(inp.shape)
     onehot_x = inp.new_zeros(inp.shape[0], args.labels + 2)
     return onehot_x.scatter_(1, inp.long(), 1)
 
@@ -117,8 +113,6 @@ class Model(nn.Module):
         hlist = []
         loss2 = 0
         for i in range(len(x)):
-            #if i >= 11:
-            #    self.rnn.app = 0
             if args.onehot:
                 inp = onehot(x[i])
                 hidden, vals, rpos = self.rnn.forward(inp, hidden)
@@ -180,70 +174,26 @@ def train_model(net, optimizer, batch_size, T, n_steps):
             plt.clf()
             plt.plot(range(len(hidden_states)),
                      [torch.norm(i.grad) for i in hidden_states])
-            wandb.log({"dLdh_{}".format(i): plt})
             plt.savefig(os.path.join(SAVEDIR,
                                      'copy_dLdh_t_{}_{}.png'.format(NET_TYPE,
                                                                     i)))
 
             pickle.dump([torch.norm(i.grad).cpu().numpy() for i in hidden_states], 
                     open(os.path.join(SAVEDIR,'copy_cldght_{}_{}_data.pickle'.format(NET_TYPE, i)), 'wb'))
-        if NET_TYPE != 'LSTM':
+        if NET_TYPE != 'LSTM' and NET_TYPE != 'RelLSTM' and NET_TYPE != 'MemLSTM':
             W_grads.append(torch.norm(net.rnn.V.weight.grad).cpu().numpy())
-            wandb.log({"W grads": torch.norm(net.rnn.V.weight.grad).cpu().numpy()})
         else:
             V = torch.cat([net.rnn.Wo.weight.grad, net.rnn.Wi.weight.grad, net.rnn.Wf.weight.grad, net.rnn.Wg.weight.grad])
             W_grads.append(torch.norm(V).cpu().numpy())
-            wandb.log({"W grads": torch.norm(V).cpu().numpy()})
         optimizer.zero_grad()
         loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(net.parameters(), args.clip)
-        #print(norm)
         save_norms.append(norm)
 
         losses.append(loss_act.item())
 
         optimizer.step()
         accs.append(accuracy)
-        '''
-        if i % 250 == 0:
-            tl, ta, th, vals, rrs = net.forward(tx, ty)
-            #print(rrs.size())
-            #sys.exit(0)
-            hist = net.rnn.long_scores.squeeze(1).detach().cpu().numpy()
-            fig, ax = plt.subplots()
-            plt.bar(np.arange(120), hist)
-            mat = np.zeros((120, 120))
-            for j in range(120):
-                if vals[j][0] is None:
-                    continue
-                #avg = torch.sum(vals[j][1], dim=1) / vals[j][1].size(1)
-                for k in range(vals[j][1].size(0)):
-                    #mat[j][k] = vals[j][1][k][0]
-                    adv = 0
-                    if vals[j][1][k][0] == 0.0:
-                        continue
-                    if j > args.lastk:
-                        adv = j - args.lastk
-                    if k < 10:
-                        mat[j][k+adv] = vals[j][1][k][0]
-                    elif j > 10:
-                        mat[j][k-10] = vals[j][1][k][0]
-                    adv = 0
-                    if j > args.lastk:
-                        adv = j - args.lastk
-                    if k < args.lastk:
-                        #print(j, k+adv, vals[j][1][k][0])
-                        #time.sleep(0.1)
-                        mat[j][k+adv] = vals[j][1][k][0]
-                    elif rrs[j][0][k-args.lastk].item() != -1.0:
-                        mat[j][int(rrs[j][0][k-args.lastk].item())] = vals[j][1][k][0]
-
-            fig, ax = plt.subplots(figsize=(15,10))
-            ax = sns.heatmap(mat, cmap='Greys')
-            name = 'step_' + str(i)  + '_acc_' + str(ta) +'_norm_' + str(norm)  
-            plt.savefig('heatmaps_copy/' + name + '.png')
-            plt.close(fig)
-        '''
         if args.log and len(accs) == 100:
             v1 = sum(accs) / len(accs)
             v2 = sum(losses) / len(losses)
@@ -252,7 +202,7 @@ def train_model(net, optimizer, batch_size, T, n_steps):
             lc += 1
             accs, losses = [], []
             torch.save(net.state_dict(), './relcopylogs/' + args.name + '.pt')
-            #writer.add_scalar('Grad Norms', norm, i)
+            print('saved')
         
         print('Update {}, Time for Update: {} , Average Loss: {}, Accuracy: {}'.format(i + 1, time.time() - s_t,
                                                                                        loss_act.item(), accuracy))
@@ -261,24 +211,6 @@ def train_model(net, optimizer, batch_size, T, n_steps):
     plt.savefig(os.path.join(SAVEDIR, 'copy_dLdW_{}.png'.format(NET_TYPE)))
     pickle.dump(W_grads,
               open(os.path.join(SAVEDIR,'copy_dldW_{}_data.pickle'.format(NET_TYPE)), 'wb'))
-    '''
-    with open(SAVEDIR + '{}_Train_Losses'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(losses, fp)
-
-    with open(SAVEDIR + '{}_Train_Accuracy'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(accs, fp)
-
-    with open(SAVEDIR + '{}_Grad_Norms'.format(NET_TYPE), 'wb') as fp:
-        pickle.dump(save_norms, fp)
-
-    save_checkpoint({
-        'state_dict': net.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'time step': i
-    },
-        '{}_{}.pth.tar'.format(NET_TYPE, i)
-    )
-    '''
     torch.save(net.state_dict(), './relcopylogs/' + args.name + '.pt')
     return
 
@@ -317,22 +249,6 @@ def load_function():
         a1.append([])
     _, acc, _, vals = net.forward(x, y)
     print(acc)
-    #sys.exit(0)
-
-    '''
-    deltas = []
-    for i in range(1, 120):
-        diff = net.rnn.memory[i] - net.rnn.memory[i-1]
-        val = torch.sum(diff ** 2).item()
-        deltas.append(val)
-    plt.plot(range(1, 120), deltas)
-    #plt.scatter(np.array(av)[1:], np.zeros(10), c='orange')
-    plt.title('Change in hidden state Copy task')
-    plt.xlabel('t')
-    plt.ylabel('delta h')
-    plt.savefig('copylogs/delta_h.png')
-    sys.exit(0)
-    '''
     ctr = 1
     for (a, b) in vals:
         if a is None:
@@ -341,15 +257,12 @@ def load_function():
         ctr += 1
         for i in range(min(a.size(0), 11)):
             a1[i].append(b[i][0].item())
-        #a2.append(b[9][0].item())
 
     clrs = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'brown', 'pink', 'orange', 'grey']
     legs = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
     for i in range(11):
         plt.plot(range(i+1, 120), a1[i], clrs[i], label=legs[i])
     plt.legend()
-    #plt.plot(a1)
-    #plt.plot(a2)
     plt.savefig('fig.png')
 
 
@@ -373,7 +286,7 @@ if args.onehot:
     udir = 'onehot/' + udir
 
 if not args.vari:
-    n_steps = 20000 #100000
+    n_steps = 200000
     LOGDIR = './logs/copytask/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     SAVEDIR = './saves/copytask/gradtest/{}/{}/{}/'.format(NET_TYPE, udir, random_seed)
     print(SAVEDIR)
@@ -415,9 +328,6 @@ if not args.adam:
     optimizer = optim.RMSprop(net.parameters(), lr=args.lr, alpha=args.alpha, weight_decay=args.weight_decay)
 else:
     optimizer = optim.Adam(net.parameters(), lr=args.lr)
-#with open(SAVEDIR + 'hparams.txt', 'w') as fp:
-#    for key, val in args.__dict__.items():
-#        fp.write(('{}: {}'.format(key, val)))
 
 if args.load:
     load_function()
