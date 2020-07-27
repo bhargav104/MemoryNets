@@ -76,6 +76,9 @@ class RNN(nn.Module):
             if hidden is None:
                 hidden = x.new_zeros(x.shape[0], self.hidden_size,requires_grad=True)                
             self.memory = []
+        elif cont:
+            hidden = hidden.detach()
+            self.memory = []
 
         h = self.U(x) + self.V(hidden)
         if self.nonlinearity:
@@ -153,12 +156,19 @@ class MemRNN(nn.Module):
             self.memory = []
             h = self.U(x) + self.V(hidden)
             self.st = h
+        elif cont:
+            self.count = 0
+            hidden = hidden.detach()
+            self.memory = []
+            h = self.U(x) + self.V(hidden)
+            self.st = h
 
         else:
             all_hs = torch.stack(self.memory)
             Uahs = self.Ua(all_hs)
 
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
+            #print(es.shape)
             alphas = self.softmax(es)
             all_hs = torch.stack(self.memory,0)
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs), all_hs), dim=0)
