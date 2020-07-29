@@ -61,6 +61,7 @@ parser.add_argument("--recurrence", type=int, default=1,
                     help="number of time-steps gradient is backpropagated (default: 1). If > 1, a LSTM is added to the model to have memory.")
 parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model to handle text input")
+parser.add_argument("--rec", type=str, default="LSTM", help='Options = LSTM, MemLSTM, RelLSTM')
 
 args = parser.parse_args()
 
@@ -73,7 +74,6 @@ default_model_name = f"{args.env}_{args.algo}_seed{args.seed}_{date}"
 
 model_name = args.model or default_model_name
 model_dir = utils.get_model_dir(model_name)
-
 # Load loggers and Tensorboard writer
 
 txt_logger = utils.get_txt_logger(model_dir)
@@ -118,7 +118,7 @@ txt_logger.info("Observations preprocessor loaded")
 
 # Load model
 
-acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text)
+acmodel = ACModel(obs_space, envs[0].action_space, args.mem, args.text, args.rec)
 if "model_state" in status:
     acmodel.load_state_dict(status["model_state"])
 acmodel.to(device)
@@ -202,3 +202,4 @@ while num_frames < args.frames:
             status["vocab"] = preprocess_obss.vocab.vocab
         utils.save_status(status, model_dir)
         txt_logger.info("Status saved")
+#python -m scripts.train --algo ppo --env MiniGrid-DoorKey-5x5-v0 --model doorkey5_rel --save-interval 10 --frames 5000000 --recurrence 16 --rel

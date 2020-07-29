@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 import torch_ac
-
+import sys
+from LSTM import RelLSTM, MemLSTM
 
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
 def init_params(m):
@@ -16,12 +17,13 @@ def init_params(m):
 
 
 class ACModel(nn.Module, torch_ac.RecurrentACModel):
-    def __init__(self, obs_space, action_space, use_memory=False, use_text=False):
+    def __init__(self, obs_space, action_space, use_memory=False, use_text=False, rec="LSTM"):
         super().__init__()
 
         # Decide which components are enabled
         self.use_text = use_text
         self.use_memory = use_memory
+        self.rec = rec
 
         # Define image embedding
         self.image_conv = nn.Sequential(
@@ -37,9 +39,16 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
         m = obs_space["image"][1]
         self.image_embedding_size = ((n-1)//2-2)*((m-1)//2-2)*64
 
-        # Define memory
         if self.use_memory:
-            self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+            if self.rec == "LSTM":
+                self.memory_rnn = nn.LSTMCell(self.image_embedding_size, self.semi_memory_size)
+            elif self.rec == "RelLSTM":
+                self.memory_rnn = RelLSTM(self.image_embedding_size, self.semi_memory_size, 5, 5, True)
+                self.memory_rnn.T = 100000
+            elif self.rec == "MemLSTM":
+                self.memory_rnn = MemLSTM(self.image_embedding_size, self.semi_memory_size)
+            else:
+                sys.exit(0)
 
         # Define text embedding
         if self.use_text:
@@ -78,14 +87,16 @@ class ACModel(nn.Module, torch_ac.RecurrentACModel):
     def semi_memory_size(self):
         return self.image_embedding_size
 
-    def forward(self, obs, memory):
-        x = obs.image.transpose(1, 3).transpose(2, 3)
+    def forward(self, obs, memory, reset=False):
+        x = obs.image.transpose(1, 3).transpose(2, 3).contiguous()
         x = self.image_conv(x)
         x = x.reshape(x.shape[0], -1)
-
         if self.use_memory:
             hidden = (memory[:, :self.semi_memory_size], memory[:, self.semi_memory_size:])
-            hidden = self.memory_rnn(x, hidden)
+            if self.rec == "RelLSTM" or self.rec == 'MemLSTM':
+                hidden = self.memory_rnn(x, hidden, reset)
+            else:
+                hidden = self.memory_rnn(x, hidden)
             embedding = hidden[0]
             memory = torch.cat(hidden, dim=1)
         else:

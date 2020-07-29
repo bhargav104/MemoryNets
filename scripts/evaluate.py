@@ -27,6 +27,7 @@ parser.add_argument("--memory", action="store_true", default=False,
                     help="add a LSTM to the model")
 parser.add_argument("--text", action="store_true", default=False,
                     help="add a GRU to the model")
+parser.add_argument("--rec", type=str, default="LSTM", help="Rel LSTM")
 args = parser.parse_args()
 
 # Set seed for all randomness sources
@@ -52,7 +53,7 @@ print("Environments loaded\n")
 model_dir = utils.get_model_dir(args.model)
 agent = utils.Agent(env.observation_space, env.action_space, model_dir,
                     device=device, argmax=args.argmax, num_envs=args.procs,
-                    use_memory=args.memory, use_text=args.text)
+                    use_memory=args.memory, use_text=args.text, rec=args.rec)
 print("Agent loaded\n")
 
 # Initialize logs
@@ -68,10 +69,14 @@ obss = env.reset()
 log_done_counter = 0
 log_episode_return = torch.zeros(args.procs, device=device)
 log_episode_num_frames = torch.zeros(args.procs, device=device)
+reset = True
 
 while log_done_counter < args.episodes:
-    actions = agent.get_actions(obss)
+    actions = agent.get_actions(obss, reset=reset)
+    reset = False
     obss, rewards, dones, _ = env.step(actions)
+    if dones:
+        reset = True
     agent.analyze_feedbacks(rewards, dones)
 
     log_episode_return += torch.tensor(rewards, device=device, dtype=torch.float)
