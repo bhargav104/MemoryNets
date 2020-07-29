@@ -86,14 +86,6 @@ class RelLSTM(nn.Module):
     def forward(self, x, hidden, reset=False):
         if reset:
             self.count = 0
-            '''
-            if hidden is None:
-                hidden = x.new_zeros(x.shape[0], self.hidden_size)
-                self.init_states(x.shape[0])
-            else:
-                hidden = hidden.detach()
-                self.ct = self.ct[:x.shape[0]].detach()
-            '''
             self.ct = hidden[1]
             hidden = hidden[0]
             self.tcnt = -1
@@ -222,32 +214,21 @@ class MemLSTM(nn.Module):
     def forward(self, x, hidden, reset=False):
         if reset:
             self.count = 0
-            '''
-            if hidden is None:
-                hidden = x.new_zeros(x.shape[0], self.hidden_size)
-                self.init_states(x.shape[0])
-            else:
-                hidden = hidden.detach()
-                self.ct = self.ct[:x.shape[0]].detach()
-            '''
             self.ct = hidden[1]
             hidden = hidden[0]
             self.tcnt = -1
 
             self.memory = []
-            #self.memory.append(hidden)
             self.st = hidden
 
 
         else:
             h_t, self.ct = hidden
-            #self.memory.append(hidden)
 
             all_hs = torch.stack(self.memory)
             Uahs = self.Ua(all_hs)
             es = torch.matmul(self.tanh(self.Va(self.st).expand_as(Uahs) + Uahs), self.v.unsqueeze(2)).squeeze(2)
             alphas = self.softmax(es)
-            #det_a = alphas.detach()
 
             ct = torch.sum(torch.mul(alphas.unsqueeze(2).expand_as(all_hs), all_hs), dim=0)
             self.st = 0.5 * (h_t + ct)
