@@ -83,6 +83,7 @@ class BaseAlgo(ABC):
         if self.acmodel.recurrent:
             self.memory = torch.zeros(shape[1], self.acmodel.memory_size, device=self.device)
             self.memories = torch.zeros(*shape, self.acmodel.memory_size, device=self.device)
+            self.reset = True
         self.mask = torch.ones(shape[1], device=self.device)
         self.masks = torch.zeros(*shape, device=self.device)
         self.actions = torch.zeros(*shape, device=self.device, dtype=torch.int)
@@ -129,13 +130,15 @@ class BaseAlgo(ABC):
             preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
             with torch.no_grad():
                 if self.acmodel.recurrent:
-                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1))
+                    dist, value, memory = self.acmodel(preprocessed_obs, self.memory * self.mask.unsqueeze(1), self.reset)
                 else:
                     dist, value = self.acmodel(preprocessed_obs)
             action = dist.sample()
-
+            if self.reset:
+                self.reset = False
             obs, reward, done, _ = self.env.step(action.cpu().numpy())
-
+            if done:
+                self.reset = True
             # Update experiences values
 
             self.obss[i] = self.obs

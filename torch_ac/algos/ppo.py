@@ -52,6 +52,7 @@ class PPOAlgo(BaseAlgo):
                 if self.acmodel.recurrent:
                     memory = exps.memory[inds]
 
+                reset = True
                 for i in range(self.recurrence):
                     # Create a sub-batch of experience
 
@@ -60,7 +61,8 @@ class PPOAlgo(BaseAlgo):
                     # Compute loss
 
                     if self.acmodel.recurrent:
-                        dist, value, memory = self.acmodel(sb.obs, memory * sb.mask)
+                        dist, value, memory = self.acmodel(sb.obs, memory * sb.mask, reset)
+                        reset = False
                     else:
                         dist, value = self.acmodel(sb.obs)
 
@@ -102,7 +104,7 @@ class PPOAlgo(BaseAlgo):
                 # Update actor-critic
 
                 self.optimizer.zero_grad()
-                batch_loss.backward()
+                batch_loss.backward(retain_graph=True)
                 grad_norm = sum(p.grad.data.norm(2).item() ** 2 for p in self.acmodel.parameters()) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel.parameters(), self.max_grad_norm)
                 self.optimizer.step()
@@ -154,3 +156,6 @@ class PPOAlgo(BaseAlgo):
         batches_starting_indexes = [indexes[i:i+num_indexes] for i in range(0, len(indexes), num_indexes)]
 
         return batches_starting_indexes
+
+
+#python -m scripts.train --algo ppo --env MiniGrid-GoToObject-6x6-N2-v0 --model gotoobject6_rel --save-interval 10 --frames 80000 --recurrence 16 --rel
